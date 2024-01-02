@@ -1,0 +1,10 @@
+eiproxy
+eiproxy.exe
+eiproxy.json
+state.json
+config.json
+client.json
+server.json
+server.log
+.vscode
+/bin
