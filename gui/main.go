@@ -158,17 +158,15 @@ func start() {
 	loadConfig()
 
 	if cfg.UserKey == userKeyPlaceholder || cfg.UserKey == "" {
-		walk.MsgBox(nil, "Error",
-			fmt.Sprintf(
-				"Please enter your access key in eiproxy.json. "+
-					"You can get it at %s (click website in the bottom right corner).",
-				webSite),
-			walk.MsgBoxIconError)
+		showErrorF(
+			"Please enter your access key in eiproxy.json. "+
+				"You can get it at %s (click website in the bottom right corner).",
+			webSite)
 		return
 	}
 	userKey, err := protocol.UserKeyFromString(cfg.UserKey)
 	if err != nil {
-		walk.MsgBox(nil, "Error", fmt.Sprintf("Invalid access key: %s", err.Error()), walk.MsgBoxIconError)
+		showErrorF("Invalid access key: %v", err)
 		return
 	}
 
@@ -198,9 +196,7 @@ func start() {
 	if err == nil {
 		err = setRegistryKeyString(HKCU, gameKeyPath, "Master Server Name", "127.0.0.1:28004")
 		if err != nil {
-			walk.MsgBox(nil, "Error",
-				fmt.Sprintf("Failed to override game's master addr: %s", err.Error()),
-				walk.MsgBoxIconError)
+			showErrorF("Failed to override game's master addr: %v", err)
 			return
 		}
 	}
@@ -209,9 +205,7 @@ func start() {
 	if err == nil {
 		err = setRegistryKeyString(HKCU, starterKeyPath, "Master Server Name", "127.0.0.1:28004")
 		if err != nil {
-			walk.MsgBox(nil, "Error",
-				fmt.Sprintf("Failed to override starter's master addr: %s", err.Error()),
-				walk.MsgBoxIconError)
+			showErrorF("Failed to override starter's master addr: %v", err)
 			return
 		}
 	}
@@ -224,24 +218,20 @@ func start() {
 		defer cancel()
 		err := c.Run(ctx)
 		if err != nil {
-			walk.MsgBox(nil, "Error", fmt.Sprintf("Client error: %s", err.Error()), walk.MsgBoxIconError)
+			showErrorF("Client error: %v", err)
 		}
 
 		// Restore master addr in registry.
 		if prevGame != "" {
 			err = setRegistryKeyString(HKCU, gameKeyPath, "Master Server Name", prevGame)
 			if err != nil {
-				walk.MsgBox(nil, "Error",
-					fmt.Sprintf("Failed to restore game's master addr: %s", err.Error()),
-					walk.MsgBoxIconError)
+				showErrorF("Failed to restore game's master addr: %v", err)
 			}
 		}
 		if prevStarter != "" {
 			err = setRegistryKeyString(HKCU, starterKeyPath, "Master Server Name", prevStarter)
 			if err != nil {
-				walk.MsgBox(nil, "Error",
-					fmt.Sprintf("Failed to restore starter's master addr: %s", err.Error()),
-					walk.MsgBoxIconError)
+				showErrorF("Failed to restore starter's master addr: %v", err)
 			}
 		}
 
@@ -448,7 +438,24 @@ func setRegistryKeyString(rootKey win.HKEY, subKeyPath, valueName, value string)
 	return nil
 }
 
+func getAndShowMainWindow() walk.Form {
+	if mainWnd != nil {
+		if !mainWnd.Visible() {
+			mainWnd.Show()
+			win.SetForegroundWindow(mainWnd.Handle())
+			win.ShowWindow(mainWnd.Handle(), win.SW_RESTORE)
+		}
+		return mainWnd
+	}
+	return nil
+}
+
+func showErrorF(format string, args ...interface{}) {
+	text := fmt.Sprintf(format, args...)
+	walk.MsgBox(getAndShowMainWindow(), "Error", text, walk.MsgBoxIconError)
+}
+
 func fatal(err error) {
-	walk.MsgBox(nil, "Error", err.Error(), walk.MsgBoxIconError)
+	showErrorF("%v", err)
 	os.Exit(1)
 }
