@@ -101,7 +101,7 @@ func (c *client) Run(ctx context.Context) error {
 
 	go func() {
 		defer wg.Done()
-		err := c.runMasterProxy(ctx)
+		err := runMasterProxy(ctx, c.cfg.MasterAddr)
 		err = ignoreCancelledOrClosed(err)
 		if err != nil {
 			err = fmt.Errorf("master proxy: %v", err)
@@ -496,7 +496,7 @@ func isCancelledOrClosed(err error) bool {
 	return errors.Is(err, context.Canceled) || errors.Is(err, net.ErrClosed)
 }
 
-func (c *client) runMasterProxy(ctx context.Context) error {
+func runMasterProxy(ctx context.Context, masterAddr string) error {
 	var lc net.ListenConfig
 	conn, err := lc.Listen(ctx, "tcp4", "127.0.0.1:28004")
 	if err != nil {
@@ -522,7 +522,7 @@ func (c *client) runMasterProxy(ctx context.Context) error {
 
 			// Connect to real master server.
 			var d net.Dialer
-			masterConn, err := d.DialContext(ctx, "tcp4", c.cfg.MasterAddr)
+			masterConn, err := d.DialContext(ctx, "tcp4", masterAddr)
 			if err != nil {
 				log.Printf("master proxy: failed to dial: %v", err)
 				return
