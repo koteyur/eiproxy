@@ -523,6 +523,7 @@ func (c *client) runMasterProxy(ctx context.Context) error {
 			wg.Add(2)
 			go func() {
 				defer wg.Done()
+				defer clientConn.(*net.TCPConn).CloseRead()
 				_, err := io.Copy(masterConn, clientConn)
 				if err != nil {
 					if err = ignoreCancelledOrClosed(err); err != nil {
@@ -533,6 +534,7 @@ func (c *client) runMasterProxy(ctx context.Context) error {
 			}()
 			go func() {
 				defer wg.Done()
+				defer clientConn.(*net.TCPConn).CloseWrite()
 				_, err = io.Copy(clientConn, masterConn)
 				if err != nil {
 					if err = ignoreCancelledOrClosed(err); err != nil {
