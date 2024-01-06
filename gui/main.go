@@ -95,8 +95,11 @@ func main() {
 					// 	OnClicked: runConfigDialog,
 					// },
 					dec.PushButton{
-						Text:      "Exit",
-						OnClicked: func() { walk.App().Exit(0) },
+						Text: "Exit",
+						OnClicked: func() {
+							mainWnd.Close()
+							walk.App().Exit(0)
+						},
 					},
 				},
 			},
