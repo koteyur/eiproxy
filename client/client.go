@@ -51,6 +51,7 @@ type client struct {
 	remoteIPToLocalIP  map[ipv4]ipv4
 	nextLocalIP        ipv4
 	masterAddr         *net.UDPAddr
+	token              protocol.Token
 }
 
 func New(cfg Config) *client {
@@ -82,6 +83,7 @@ func (c *client) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to connect: %w", err)
 	}
 	log.Printf("Connection established. Port: %d", port)
+	c.token = token
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -108,7 +110,7 @@ func (c *client) Run(ctx context.Context) error {
 
 	go func() {
 		defer wg.Done()
-		err = c.runProxyClient(ctx, token, fmt.Sprintf("%s:%d", serverURL.Hostname(), port))
+		err = c.runProxyClient(ctx, fmt.Sprintf("%s:%d", serverURL.Hostname(), port))
 		err = ignoreCancelledOrClosed(err)
 		if err != nil {
 			err = fmt.Errorf("proxy main loop: %w", err)
@@ -164,7 +166,7 @@ func (c *client) connect(ctx context.Context) (port int, token protocol.Token, e
 	return *connResp.Port, *connResp.Token, nil
 }
 
-func (c *client) runProxyClient(ctx context.Context, token protocol.Token, addr string) error {
+func (c *client) runProxyClient(ctx context.Context, addr string) error {
 	var d net.Dialer
 	netConn, err := d.DialContext(ctx, "udp4", addr)
 	if err != nil {
@@ -174,7 +176,7 @@ func (c *client) runProxyClient(ctx context.Context, token protocol.Token, addr 
 	conn := netConn.(*net.UDPConn)
 
 	log.Printf("Sending token to %#v", addr)
-	err = c.sendToken(conn, token)
+	err = sendToken(conn, c.token)
 	if err != nil {
 		return fmt.Errorf("failed to send token: %w", err)
 	}
@@ -228,7 +230,7 @@ func (c *client) runProxyClient(ctx context.Context, token protocol.Token, addr 
 	return fmt.Errorf("failed to disconnect")
 }
 
-func (c *client) sendToken(conn *net.UDPConn, token protocol.Token) error {
+func sendToken(conn *net.UDPConn, token protocol.Token) error {
 	err := conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	if err != nil {
 		return fmt.Errorf("token: failed to set deadline: %w", err)
@@ -273,16 +275,26 @@ func (c *client) proxyMainLoopReader(conn *net.UDPConn) error {
 
 	c.getWorkerChan(c.masterAddr, true)
 
+	lastSuccess := time.Now()
 	for {
-		err := conn.SetReadDeadline(time.Now().Add(1 * time.Minute))
+		err := conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 		if err != nil {
 			return fmt.Errorf("main-loop: failed to set read deadline: %w", err)
 		}
 
 		n, err := conn.Read(buf[:])
 		if err != nil {
-			return fmt.Errorf("main-loop: failed to read: %w", err)
+			if netErr := err.(net.Error); !netErr.Timeout() {
+				return fmt.Errorf("main-loop: failed to read: %w", err)
+			}
+			if time.Since(lastSuccess) > 30*time.Second {
+				return fmt.Errorf("main-loop: server stopped responding")
+			}
+			c.dataToServerCh <- c.token[:]
+			continue
 		}
+
+		lastSuccess = time.Now()
 
 		if n >= protocol.AddrDataMinSize {
 			addr, data := protocol.DecodeAddrData(buf[:n])
