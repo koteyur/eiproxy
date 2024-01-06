@@ -306,7 +306,7 @@ func (c *client) proxyMainLoopReader(conn *net.UDPConn) error {
 }
 
 func (c *client) proxyMainLoopWriter(conn *net.UDPConn) error {
-	const keepAliveInterval = 5 * time.Second
+	const keepAliveInterval = 3 * time.Second
 	ticker := time.NewTicker(keepAliveInterval)
 	defer ticker.Stop()
 
