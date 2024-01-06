@@ -262,8 +262,6 @@ func sendToken(conn *net.UDPConn, token protocol.Token) error {
 }
 
 func (c *client) proxyMainLoopReader(conn *net.UDPConn) error {
-	var buf [2048]byte
-
 	defer func() {
 		c.mut.Lock()
 		defer c.mut.Unlock()
@@ -273,6 +271,7 @@ func (c *client) proxyMainLoopReader(conn *net.UDPConn) error {
 		clear(c.remoteAddrToDataCh)
 	}()
 
+	var buf [2048]byte
 	c.getWorkerChan(c.masterAddr, true)
 
 	lastSuccess := time.Now()
@@ -287,7 +286,9 @@ func (c *client) proxyMainLoopReader(conn *net.UDPConn) error {
 			if netErr := err.(net.Error); !netErr.Timeout() {
 				return fmt.Errorf("main-loop: failed to read: %w", err)
 			}
+
 			if time.Since(lastSuccess) > 30*time.Second {
+				log.Printf("Main loop: server stopped responding")
 				return fmt.Errorf("main-loop: server stopped responding")
 			}
 			c.dataToServerCh <- c.token[:]
@@ -302,6 +303,7 @@ func (c *client) proxyMainLoopReader(conn *net.UDPConn) error {
 			select {
 			case dataCh <- append([]byte(nil), data...):
 			default:
+				log.Printf("Main loop: data channel is full")
 			}
 		} else {
 			switch protocol.ProxyServerResponseType(buf[0]) {
@@ -358,7 +360,6 @@ func (c *client) handleWorker(
 	defer cancel()
 
 	port := 0
-	log.Printf("Running worker for %v, master: %v", localIP, isMaster)
 	if isMaster {
 		port = 28004
 	}
@@ -371,6 +372,9 @@ func (c *client) handleWorker(
 	defer pc.Close()
 
 	conn := pc.(*net.UDPConn)
+
+	log.Printf("Running worker: local addr: %v, remote addr: %v is master: %v",
+		conn.LocalAddr(), remoteAddr, isMaster)
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -425,6 +429,7 @@ func (c *client) handleWorker(
 			select {
 			case c.dataToServerCh <- data:
 			default:
+				log.Printf("Worker: data channel is full")
 			}
 		}
 	}()
@@ -447,9 +452,9 @@ func (c *client) getWorkerChan(addr *net.UDPAddr, isMaster bool) chan []byte {
 	dataCh, ok := c.remoteAddrToDataCh[addr4]
 	if ok {
 		return dataCh
-	} else {
-		log.Printf("Creating worker for %v", addr4)
 	}
+
+	log.Printf("Creating worker for %v", addr4)
 
 	localIP, ok := c.remoteIPToLocalIP[addr4.ip]
 	if !ok {
