@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"sync"
 	"time"
 )
@@ -250,7 +251,7 @@ func sendToken(conn *net.UDPConn, token protocol.Token) error {
 
 		_, err = conn.Read(buf[:])
 		if err != nil {
-			if netErr := err.(net.Error); !netErr.Timeout() {
+			if !errors.Is(err, os.ErrDeadlineExceeded) {
 				return fmt.Errorf("token: failed to read: %w", err)
 			}
 		} else if buf[0] == byte(protocol.ProxyServerResponseTypeKeepAlive) {
@@ -283,7 +284,7 @@ func (c *client) proxyMainLoopReader(conn *net.UDPConn) error {
 
 		n, err := conn.Read(buf[:])
 		if err != nil {
-			if netErr := err.(net.Error); !netErr.Timeout() {
+			if !errors.Is(err, os.ErrDeadlineExceeded) {
 				return fmt.Errorf("main-loop: failed to read: %w", err)
 			}
 
