@@ -12,6 +12,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strings"
 	"syscall"
 	"unsafe"
 
@@ -164,7 +165,7 @@ func start() {
 			webSite)
 		return
 	}
-	userKey, err := protocol.UserKeyFromString(cfg.UserKey)
+	userKey, err := protocol.UserKeyFromString(strings.ToUpper(strings.TrimSpace(cfg.UserKey)))
 	if err != nil {
 		showErrorF("Invalid access key: %v", err)
 		return
