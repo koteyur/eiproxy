@@ -218,7 +218,8 @@ func start() {
 		defer close(done)
 		defer cancel()
 		err := c.Run(ctx)
-		if err != nil {
+		log.Printf("Client stopped: %v", err)
+		if err != nil && !errors.Is(err, context.Canceled) {
 			showErrorF("Client error: %v", err)
 		}
 
