@@ -87,6 +87,7 @@ func (c *client) Run(ctx context.Context) error {
 	defer cancel()
 
 	var wg sync.WaitGroup
+	defer wg.Wait()
 	wg.Add(2)
 
 	errCh := make(chan error, 2)
