@@ -417,8 +417,23 @@ func (c *client) handleWorker(
 				if isCancelledOrClosed(err) {
 					return
 				}
+				if errors.Is(err, os.ErrDeadlineExceeded) {
+					if !isMaster {
+						log.Printf("Worker: timed out, exiting. local addr: %v, remote addr: %v",
+							conn.LocalAddr(), remoteAddr)
+						return
+					}
+					continue
+				}
+
 				log.Printf("Worker: failed to read: %v", err)
-				continue
+				if isMaster {
+					// Not sure if we should continue here, but it's might be non-recoverable error.
+					// But let's keep it like this for now until we see a real error.
+					time.Sleep(100 * time.Millisecond) // prevent busy loop
+					continue
+				}
+				return
 			}
 
 			if !addr.IP.Equal(addr.IP) || addr.Port != gameAddr.Port {
