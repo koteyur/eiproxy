@@ -5,4 +5,4 @@ build:
 		-ico eiproxy.ico \
 		-manifest eiproxy.manifest \
 		-o rsrc.syso
-	GOOS=windows GOARCH=386 go build -ldflags="-H windowsgui -s -w"
+	GOOS=windows GOARCH=386 go build -ldflags="-H windowsgui"

@@ -28,7 +28,7 @@ GUI client itself is only available for Windows. For Linux use wine or the CLI v
     -ico eiproxy.ico \
     -manifest eiproxy.manifest \
     -o rsrc.syso
-  GOOS=windows GOARCH=386 go build -ldflags="-H windowsgui -s -w"
+  GOARCH=386 go build -ldflags="-H windowsgui"
   ```
 * Linux:
   ```bash
