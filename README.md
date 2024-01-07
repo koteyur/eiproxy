@@ -23,6 +23,7 @@ GUI client itself is only available for Windows. For Linux use wine or the CLI v
 
 * Windows:
   ```
+  cd gui
   go run github.com/akavel/rsrc@latest \
     -arch 386 \
     -ico eiproxy.ico \
