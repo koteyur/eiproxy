@@ -118,7 +118,11 @@ func main() {
 					dec.LinkLabel{
 						Text: fmt.Sprintf(`<a id="this" href="%s">website</a>`, webSite),
 						OnLinkActivated: func(link *walk.LinkLabelLink) {
-							_ = exec.Command("rundll32", "url.dll,FileProtocolHandler", link.URL()).Start()
+							win.ShellExecute(mainWnd.Handle(),
+								syscall.StringToUTF16Ptr("open"),
+								syscall.StringToUTF16Ptr(webSite),
+								nil, nil, win.SW_SHOWNORMAL,
+							)
 						},
 					},
 					dec.HSeparator{},
