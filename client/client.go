@@ -403,7 +403,7 @@ func (c *client) handleWorker(
 		var buf [2048]byte
 		for {
 			if !isMaster {
-				err := conn.SetReadDeadline(time.Now().Add(5 * time.Minute))
+				err := conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 				if err != nil {
 					if err = ignoreCancelledOrClosed(err); err != nil {
 						log.Printf("Worker: failed to set read deadline: %v", err)
