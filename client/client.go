@@ -266,9 +266,6 @@ func (c *client) proxyMainLoopReader(conn *net.UDPConn) error {
 	defer func() {
 		c.mut.Lock()
 		defer c.mut.Unlock()
-		for _, ch := range c.remoteAddrToDataCh {
-			close(ch)
-		}
 		clear(c.remoteAddrToDataCh)
 	}()
 
@@ -474,13 +471,8 @@ func (c *client) getWorkerChan(addr *net.UDPAddr, isMaster bool) chan []byte {
 		}
 
 		c.mut.Lock()
-		if _, ok := c.remoteAddrToDataCh[addr4]; ok {
-			delete(c.remoteAddrToDataCh, addr4)
-			for range dataCh {
-			}
-			close(dataCh)
-		}
-		c.mut.Unlock()
+		defer c.mut.Unlock()
+		delete(c.remoteAddrToDataCh, addr4)
 	}(dataCh)
 	return dataCh
 }
