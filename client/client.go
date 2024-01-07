@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -86,40 +87,35 @@ func (c *client) Run(ctx context.Context) error {
 	log.Printf("Connection established. Port: %d", port)
 	c.token = token
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
 	var wg sync.WaitGroup
 	defer wg.Wait()
-	wg.Add(2)
 
-	errCh := make(chan error, 2)
-	go func() {
-		wg.Wait()
-		close(errCh)
-	}()
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
 
-	go func() {
-		defer wg.Done()
-		err := runMasterProxy(ctx, c.cfg.MasterAddr)
-		err = ignoreCancelledOrClosed(err)
-		if err != nil {
-			err = fmt.Errorf("master proxy: %v", err)
-		}
-		errCh <- err
-	}()
+	run := func(f func() error, prefix string) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 
-	go func() {
-		defer wg.Done()
-		err = c.runProxyClient(ctx, fmt.Sprintf("%s:%d", serverURL.Hostname(), port))
-		err = ignoreCancelledOrClosed(err)
-		if err != nil {
-			err = fmt.Errorf("proxy main loop: %w", err)
-		}
-		errCh <- err
-	}()
+			var err error
+			defer func() { cancel(err) }()
+			err = f()
+			log.Printf("%s: stopped: %v", prefix, err)
+			err = ignoreCancelledOrClosed(err)
+			if err != nil {
+				err = fmt.Errorf("%s: %v", strings.ToLower(prefix), err)
+			}
+		}()
+	}
 
-	return <-errCh
+	run(func() error { return runMasterProxy(ctx, c.cfg.MasterAddr) }, "Master proxy")
+	run(func() error {
+		return c.runProxyClient(ctx, fmt.Sprintf("%s:%d", serverURL.Hostname(), port))
+	}, "Proxy main loop")
+
+	<-ctx.Done()
+	return context.Cause(ctx)
 }
 
 func (c *client) connect(ctx context.Context) (port int, token protocol.Token, err error) {
@@ -184,36 +180,46 @@ func (c *client) runProxyClient(ctx context.Context, addr string) error {
 	log.Printf("Token has been sent")
 
 	var wg sync.WaitGroup
-	errCh := make(chan error, 2)
-	wg.Add(2)
-	go func() {
-		wg.Wait()
-		close(errCh)
-	}()
+	defer wg.Wait() // wait after context is cancelled and dataToServerCh is closed
+
+	childCtx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
 
 	go func() {
-		defer wg.Done()
-		err := c.proxyMainLoopReader(conn)
-		err = ignoreCancelledOrClosed(err)
-		if err != nil {
-			log.Printf("Main loop reader: %v", err)
-		}
-		errCh <- err
+		<-childCtx.Done()
+		conn.Close()
 	}()
-	go func() {
-		defer wg.Done()
-		err := c.proxyMainLoopWriter(conn)
-		err = ignoreCancelledOrClosed(err)
-		if err != nil {
-			log.Printf("Main loop writer: %v", err)
-		}
-		errCh <- err
-	}()
+
+	run := func(f func(ctx context.Context, conn *net.UDPConn) error, prefix string) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			var err error
+			defer func() { cancel(err) }()
+
+			err = f(childCtx, conn)
+			log.Printf("%s: stopped: %v", prefix, err)
+
+			err = ignoreCancelledOrClosed(err)
+			if err != nil {
+				err = fmt.Errorf("%s: %v", strings.ToLower(prefix), err)
+			}
+		}()
+	}
+
+	run(c.proxyMainLoopReader, "Main loop reader")
+	run(c.proxyMainLoopWriter, "Main loop writer")
 
 	select {
-	case err := <-errCh:
-		return err
 	case <-ctx.Done():
+		// Graceful shutdown.
+
+	case <-childCtx.Done():
+		// They can't decide to stop by themselves, so something happend.
+		err := context.Cause(childCtx)
+		log.Printf("Client failed: %v", err)
+		return err
 	}
 
 	log.Printf("Context done, disconnecting")
@@ -221,7 +227,8 @@ func (c *client) runProxyClient(ctx context.Context, addr string) error {
 		c.dataToServerCh <- []byte{byte(protocol.ProxyClientRequestTypeDisconnect)}
 
 		select {
-		case <-errCh:
+		case <-childCtx.Done():
+			// Assume that server has disconnected.
 			log.Printf("Disconnected from proxy server")
 			return nil
 		case <-time.After(100 * time.Millisecond):
@@ -262,7 +269,7 @@ func sendToken(conn *net.UDPConn, token protocol.Token) error {
 	}
 }
 
-func (c *client) proxyMainLoopReader(conn *net.UDPConn) error {
+func (c *client) proxyMainLoopReader(ctx context.Context, conn *net.UDPConn) error {
 	defer func() {
 		c.mut.Lock()
 		defer c.mut.Unlock()
@@ -289,7 +296,15 @@ func (c *client) proxyMainLoopReader(conn *net.UDPConn) error {
 				log.Printf("Main loop: server stopped responding")
 				return fmt.Errorf("main-loop: server stopped responding")
 			}
-			c.dataToServerCh <- c.token[:]
+
+			log.Printf("Main loop: server read timeout, sending token")
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+
+			// This might get stuck if main writer exited.
+			case c.dataToServerCh <- c.token[:]:
+			}
 			continue
 		}
 
@@ -321,7 +336,7 @@ func (c *client) proxyMainLoopReader(conn *net.UDPConn) error {
 	}
 }
 
-func (c *client) proxyMainLoopWriter(conn *net.UDPConn) error {
+func (c *client) proxyMainLoopWriter(ctx context.Context, conn *net.UDPConn) error {
 	const keepAliveInterval = 3 * time.Second
 	ticker := time.NewTicker(keepAliveInterval)
 	defer ticker.Stop()
@@ -335,6 +350,8 @@ func (c *client) proxyMainLoopWriter(conn *net.UDPConn) error {
 		var data []byte
 		var ok bool
 		select {
+		case <-ctx.Done():
+			return ctx.Err()
 		case data, ok = <-c.dataToServerCh:
 			if !ok {
 				return nil
