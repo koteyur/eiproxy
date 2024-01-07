@@ -276,10 +276,10 @@ func (c *client) proxyMainLoopReader(ctx context.Context, conn *net.UDPConn) err
 		clear(c.remoteAddrToDataCh)
 	}()
 
-	var buf [2048]byte
 	c.getWorkerChan(c.masterAddr, true)
 
 	lastSuccess := time.Now()
+	var buf [2048]byte
 	for {
 		err := conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 		if err != nil {
@@ -489,8 +489,7 @@ func (c *client) getWorkerChan(addr *net.UDPAddr, isMaster bool) chan []byte {
 	c.mut.Lock()
 	defer c.mut.Unlock()
 
-	dataCh, ok := c.remoteAddrToDataCh[addr4]
-	if ok {
+	if dataCh, ok := c.remoteAddrToDataCh[addr4]; ok {
 		return dataCh
 	}
 
@@ -503,7 +502,7 @@ func (c *client) getWorkerChan(addr *net.UDPAddr, isMaster bool) chan []byte {
 		c.remoteIPToLocalIP[addr4.ip] = localIP
 	}
 
-	dataCh = make(chan []byte, dataChanSize)
+	dataCh := make(chan []byte, dataChanSize)
 	c.remoteAddrToDataCh[addr4] = dataCh
 
 	go func(dataCh chan []byte) {
