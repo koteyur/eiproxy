@@ -3,17 +3,21 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"eiproxy/client"
 	"eiproxy/protocol"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
+	"net/url"
 	"os"
-	"os/exec"
 	"strings"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/lxn/walk"
@@ -163,13 +167,20 @@ func start() {
 	loadConfig()
 
 	if cfg.UserKey == userKeyPlaceholder || cfg.UserKey == "" {
-		showErrorF(
-			"Please enter your access key in eiproxy.json. "+
-				"You can get it at %s (click website in the bottom right corner).",
-			webSite)
-		return
+		ok := showEnterKeyDialog("")
+		if !ok {
+			return
+		}
+	} else {
+		if err := checkKey(cfg.UserKey); err != nil {
+			ok := showEnterKeyDialog("Failed to check access key: " + err.Error())
+			if !ok {
+				return
+			}
+		}
 	}
-	userKey, err := protocol.UserKeyFromString(strings.ToUpper(strings.TrimSpace(cfg.UserKey)))
+
+	userKey, err := protocol.UserKeyFromString(cfg.UserKey)
 	if err != nil {
 		showErrorF("Invalid access key: %v", err)
 		return
@@ -253,6 +264,95 @@ func start() {
 		}
 		stopAndWait = func() {}
 	}()
+}
+
+func showEnterKeyDialog(reason string) bool {
+	var dlg *walk.Dialog
+	var keyEdit *walk.LineEdit
+	var buttonOk, buttonCancel *walk.PushButton
+
+	var key string
+
+	text := ""
+	if reason != "" {
+		text += reason + ".\n\n"
+	}
+	text += "Please enter your access key. You can get it here: " +
+		fmt.Sprintf(`<a id="this" href="%s">website</a>`, webSite)
+
+	_ = dec.Dialog{
+		AssignTo:      &dlg,
+		Title:         "Enter access key",
+		DefaultButton: &buttonOk,
+		CancelButton:  &buttonCancel,
+		MinSize:       dec.Size{Width: 400, Height: 150},
+		Layout:        dec.VBox{},
+		Font: dec.Font{
+			PointSize: walk.IntFrom96DPI(10, 96),
+		},
+		Children: []dec.Widget{
+			dec.LinkLabel{
+				Text: text,
+				OnLinkActivated: func(link *walk.LinkLabelLink) {
+					win.ShellExecute(mainWnd.Handle(),
+						syscall.StringToUTF16Ptr("open"),
+						syscall.StringToUTF16Ptr(webSite),
+						nil, nil, win.SW_SHOWNORMAL,
+					)
+				},
+				MaxSize: dec.Size{
+					Width:  300,
+					Height: 100,
+				},
+			},
+			dec.LineEdit{
+				AssignTo:     &keyEdit,
+				Text:         cfg.UserKey,
+				PasswordMode: true,
+				OnTextChanged: func() {
+					buttonOk.SetEnabled(keyEdit.Text() != "")
+				},
+			},
+			dec.Composite{
+				Layout: dec.HBox{},
+				Children: []dec.Widget{
+					dec.PushButton{
+						AssignTo: &buttonOk,
+						Text:     "OK",
+						Enabled:  cfg.UserKey != "",
+						OnClicked: func() {
+							key = keyEdit.Text()
+							err := checkKey(key)
+							if err != nil {
+								if errors.Is(err, protocol.ErrInvalidKey) {
+									showErrorF("Invalid access key format! Please make sure you entered it correctly.")
+									return
+								}
+								showErrorF("Failed to check access key: %v", err)
+								return
+							}
+							dlg.Accept()
+						},
+					},
+					dec.PushButton{
+						AssignTo: &buttonCancel,
+						Text:     "Cancel",
+						OnClicked: func() {
+							dlg.Cancel()
+						},
+					},
+				},
+			},
+		},
+	}.Create(getAndShowMainWindow())
+
+	if dlg.Run() != walk.DlgCmdOK {
+		return false
+	}
+
+	cfg.UserKey = key
+	saveConfig()
+	return true
 }
 
 func createTrayIcon(mw *walk.MainWindow, icon *walk.Icon) *walk.NotifyIcon {
@@ -372,6 +472,49 @@ func loadConfig() {
 	if err != nil {
 		fatal(err)
 	}
+
+	cfg.UserKey = normalizeKey(cfg.UserKey)
+}
+
+func saveConfig() {
+	cfg.UserKey = normalizeKey(cfg.UserKey)
+
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		fatal(err)
+	}
+	err = os.WriteFile("eiproxy.json", data, 0644)
+	if err != nil {
+		fatal(err)
+	}
+}
+
+func checkKey(key string) error {
+	key = normalizeKey(key)
+
+	_, err := protocol.UserKeyFromString(key)
+	if err != nil {
+		return err
+	}
+
+	url, _ := url.JoinPath(cfg.ServerURL, "api/user")
+	var response struct {
+		Error *string `json:"error,omitempty"`
+	}
+	err = apiRequest(http.MethodGet, url, key, nil, &response)
+	if err != nil {
+		return err
+	}
+
+	if response.Error != nil {
+		return errors.New(*response.Error)
+	}
+
+	return nil
+}
+
+func normalizeKey(key string) string {
+	return strings.ToUpper(strings.TrimSpace(key))
 }
 
 func registryKeyString(rootKey win.HKEY, subKeyPath, valueName string) (value string, err error) {
@@ -483,4 +626,50 @@ func showErrorF(format string, args ...interface{}) {
 func showMessageF(title string, style walk.MsgBoxStyle, format string, args ...interface{}) {
 	text := fmt.Sprintf(format, args...)
 	walk.MsgBox(getAndShowMainWindow(), title, text, style)
+}
+
+func apiRequest(method, url string, authKey string, params, response any) error {
+	const timeout = 5 * time.Second
+
+	var reader io.Reader
+	if params != nil {
+		requestData, err := json.Marshal(params)
+		if err != nil {
+			return fmt.Errorf("failed to marshal request: %w", err)
+		}
+		reader = bytes.NewReader(requestData)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, method, url, reader)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	if authKey != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", authKey))
+	}
+	req.Header.Set("Content-type", "application/json")
+
+	hc := http.Client{
+		Timeout: timeout,
+	}
+	resp, err := hc.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("%s", http.StatusText(resp.StatusCode))
+	}
+
+	decoder := json.NewDecoder(resp.Body)
+	if err := decoder.Decode(response); err != nil {
+		return fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return nil
 }
