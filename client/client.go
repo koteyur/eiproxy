@@ -339,6 +339,7 @@ func (c *client) proxyMainLoopWriter(conn *net.UDPConn) error {
 			if !ok {
 				return nil
 			}
+			ticker.Reset(keepAliveInterval)
 		case <-ticker.C:
 			data = []byte{byte(protocol.ProxyClientRequestTypeKeepAlive)}
 		}
