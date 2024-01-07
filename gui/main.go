@@ -500,6 +500,10 @@ func loadConfig() {
 		fatal(err)
 	}
 
+	if cfg.UserKey == userKeyPlaceholder {
+		cfg.UserKey = ""
+	}
+
 	cfg.UserKey = normalizeKey(cfg.UserKey)
 }
 
