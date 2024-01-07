@@ -44,6 +44,7 @@ type config struct {
 var (
 	mainWnd         *walk.MainWindow
 	startBt, stopBt *walk.PushButton
+	proxyIPEdit     *walk.TextEdit
 
 	cfg           config
 	defaultConfig = config{
@@ -88,6 +89,21 @@ func main() {
 						Enabled:   false,
 						OnClicked: func() {},
 						AssignTo:  &stopBt,
+					},
+					dec.Composite{
+						Layout: dec.Flow{},
+						Font:   dec.Font{PointSize: walk.IntFrom96DPI(10, 96)},
+						Children: []dec.Widget{
+							dec.TextLabel{
+								Text: "Your proxy IP:",
+							},
+							dec.TextEdit{
+								Text:     "",
+								Enabled:  false,
+								ReadOnly: true,
+								AssignTo: &proxyIPEdit,
+							},
+						},
 					},
 					// 	},
 					// },
@@ -260,9 +276,20 @@ func start() {
 		if !noUpdateUI {
 			stopBt.SetEnabled(false)
 			startBt.SetEnabled(true)
+			proxyIPEdit.SetEnabled(false)
+			proxyIPEdit.SetText("")
 			stopBt.Clicked().Detach(handle)
 		}
 		stopAndWait = func() {}
+	}()
+
+	go func() {
+		addr := c.GetProxyAddr(100 * time.Millisecond)
+		if addr == "" {
+			return
+		}
+		proxyIPEdit.SetEnabled(true)
+		proxyIPEdit.SetText(addr)
 	}()
 }
 
