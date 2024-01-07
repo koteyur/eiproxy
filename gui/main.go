@@ -334,7 +334,7 @@ func showEnterKeyDialog(reason string) bool {
 			},
 			dec.LineEdit{
 				AssignTo:     &keyEdit,
-				Text:         cfg.UserKey,
+				Text:         "",
 				PasswordMode: true,
 				OnTextChanged: func() {
 					buttonOk.SetEnabled(keyEdit.Text() != "")
