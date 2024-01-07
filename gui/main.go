@@ -185,6 +185,11 @@ func start() {
 	stopBt.SetEnabled(true)
 	handle := stopBt.Clicked().Attach(func() { cancel() })
 
+	if isGameRunning() {
+		showWarningF("Game is running. Please RESTART it. " +
+			"Otherwise your server might be unavailable for other players.")
+	}
+
 	// Override master addr in:
 	// - HKCU\Software\Gipat.Ru\EI_Starter\EvilIslands\Network Settings\Master Server Name
 	// - Software\Nival Interactive\EvilIslands\Network Settings\Master Server Name
@@ -310,6 +315,12 @@ func createTrayIcon(mw *walk.MainWindow, icon *walk.Icon) *walk.NotifyIcon {
 	}
 
 	return ni
+}
+
+func isGameRunning() bool {
+	hWnd := win.FindWindow(windows.StringToUTF16Ptr("EIGAME"),
+		windows.StringToUTF16Ptr("Evil Islands"))
+	return hWnd != 0
 }
 
 func ensureSingleAppInstance() func() {
@@ -452,12 +463,20 @@ func getAndShowMainWindow() walk.Form {
 	return nil
 }
 
-func showErrorF(format string, args ...interface{}) {
-	text := fmt.Sprintf(format, args...)
-	walk.MsgBox(getAndShowMainWindow(), "Error", text, walk.MsgBoxIconError)
-}
-
 func fatal(err error) {
 	showErrorF("%v", err)
 	os.Exit(1)
+}
+
+func showWarningF(format string, args ...interface{}) {
+	showMessageF("Warning", walk.MsgBoxIconWarning, format, args...)
+}
+
+func showErrorF(format string, args ...interface{}) {
+	showMessageF("Error", walk.MsgBoxIconError, format, args...)
+}
+
+func showMessageF(title string, style walk.MsgBoxStyle, format string, args ...interface{}) {
+	text := fmt.Sprintf(format, args...)
+	walk.MsgBox(getAndShowMainWindow(), title, text, style)
 }
