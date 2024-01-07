@@ -46,14 +46,18 @@ func (ap addrPortV4) ToUDPAddr() *net.UDPAddr {
 }
 
 type client struct {
-	mut                sync.Mutex
-	cfg                Config
+	mut   sync.Mutex
+	cfg   Config
+	ready chan struct{}
+
 	dataToServerCh     chan []byte
 	remoteAddrToDataCh map[addrPortV4]chan []byte
 	remoteIPToLocalIP  map[ipv4]ipv4
 	nextLocalIP        ipv4
 	masterAddr         *net.UDPAddr
+	serverIP           *net.IPAddr
 	token              protocol.Token
+	port               int
 }
 
 func New(cfg Config) *client {
@@ -63,6 +67,7 @@ func New(cfg Config) *client {
 		remoteIPToLocalIP:  make(map[ipv4]ipv4),
 		remoteAddrToDataCh: make(map[addrPortV4]chan []byte, dataChanSize),
 		nextLocalIP:        ipv4{127, 0, 0, 1},
+		ready:              make(chan struct{}),
 	}
 }
 
@@ -79,6 +84,13 @@ func (c *client) Run(ctx context.Context) error {
 	}
 	c.masterAddr = masterAddr
 
+	log.Printf("Resolving server address %s", serverURL.Hostname())
+	serverIP, err := net.ResolveIPAddr("ip4", serverURL.Hostname())
+	if err != nil {
+		return fmt.Errorf("failed to resolve server address: %w", err)
+	}
+	c.serverIP = serverIP
+
 	log.Printf("Connecting to server %#v", c.cfg.ServerURL)
 	port, token, err := c.connect(ctx)
 	if err != nil {
@@ -86,6 +98,8 @@ func (c *client) Run(ctx context.Context) error {
 	}
 	log.Printf("Connection established. Port: %d", port)
 	c.token = token
+	c.port = port
+	close(c.ready)
 
 	var wg sync.WaitGroup
 	defer wg.Wait()
@@ -116,6 +130,15 @@ func (c *client) Run(ctx context.Context) error {
 
 	<-ctx.Done()
 	return context.Cause(ctx)
+}
+
+func (c *client) GetProxyAddr(timeout time.Duration) string {
+	select {
+	case <-c.ready:
+		return fmt.Sprintf("%s:%d", c.serverIP.IP, c.port)
+	case <-time.After(timeout):
+		return ""
+	}
 }
 
 func (c *client) connect(ctx context.Context) (port int, token protocol.Token, err error) {
