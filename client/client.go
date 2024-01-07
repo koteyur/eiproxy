@@ -249,12 +249,12 @@ func sendToken(conn *net.UDPConn, token protocol.Token) error {
 			return fmt.Errorf("token: failed to set deadline: %w", err)
 		}
 
-		_, err = conn.Read(buf[:])
+		n, err := conn.Read(buf[:])
 		if err != nil {
 			if !errors.Is(err, os.ErrDeadlineExceeded) {
 				return fmt.Errorf("token: failed to read: %w", err)
 			}
-		} else if buf[0] == byte(protocol.ProxyServerResponseTypeKeepAlive) {
+		} else if n > 0 && buf[0] == byte(protocol.ProxyServerResponseTypeKeepAlive) {
 			return nil
 		}
 
@@ -295,6 +295,10 @@ func (c *client) proxyMainLoopReader(conn *net.UDPConn) error {
 
 		lastSuccess = time.Now()
 
+		if n == 0 {
+			// Empty packets are currently not supported.
+			continue
+		}
 		if n >= protocol.AddrDataMinSize {
 			addr, data := protocol.DecodeAddrData(buf[:n])
 			dataCh := c.getWorkerChan(addr, false)
@@ -419,6 +423,11 @@ func (c *client) handleWorker(
 
 			if !addr.IP.Equal(addr.IP) || addr.Port != gameAddr.Port {
 				log.Printf("Worker: packet from unexpected addr: %v", addr)
+				continue
+			}
+
+			if n == 0 {
+				// Empty packets are currently not supported.
 				continue
 			}
 
