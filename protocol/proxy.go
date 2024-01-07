@@ -40,7 +40,7 @@ func DecodeAddrData(data []byte) (*net.UDPAddr, []byte) {
 		panic("data is too short")
 	}
 	return &net.UDPAddr{
-		IP:   net.IP(data[:4]),
+		IP:   net.IPv4(data[0], data[1], data[2], data[3]),
 		Port: int(binary.LittleEndian.Uint16(data[4:6])),
 	}, data[6:]
 }
