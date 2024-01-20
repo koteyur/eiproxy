@@ -304,6 +304,7 @@ func showEnterKeyDialog(reason string) bool {
 	_ = dec.Dialog{
 		AssignTo:      &dlg,
 		Title:         "Enter access key",
+		Icon:          walk.IconQuestion(),
 		DefaultButton: &buttonOk,
 		CancelButton:  &buttonCancel,
 		MinSize:       dec.Size{Width: 400, Height: 150},
