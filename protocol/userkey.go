@@ -31,10 +31,7 @@ func (k UserKey) String() string {
 func UserKeyFromString(keyStr string) (UserKey, error) {
 	var key UserKey
 	data, err := base32.StdEncoding.DecodeString(keyStr)
-	if err != nil {
-		return key, fmt.Errorf("base32 decode: %w", err)
-	}
-	if len(data) != len(key) {
+	if err != nil || len(data) != len(key) {
 		return key, ErrInvalidKey
 	}
 	copy(key[:], data[:])

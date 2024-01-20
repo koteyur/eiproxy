@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"testing"
 )
@@ -32,16 +33,17 @@ func TestUserKeyFromString(t *testing.T) {
 		name    string
 		args    args
 		want    UserKey
-		wantErr bool
+		wantErr error
 	}{
-		{"test1", args{"AAAAAAAAAAAAAAAA"}, UserKey{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, false},
-		{"test2", args{"AAAQEAYEAUDAOCAJ"}, UserKey{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}, false},
-		{"test3", args{"AAAQEAYEAUDAOCA"}, UserKey{}, true},
+		{"test1", args{"AAAAAAAAAAAAAAAA"}, UserKey{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, nil},
+		{"test2", args{"AAAQEAYEAUDAOCAJ"}, UserKey{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}, nil},
+		{"test3", args{"AAAQEAYEAUDAOCA"}, UserKey{}, ErrInvalidKey},
+		{"test4", args{"foo"}, UserKey{}, ErrInvalidKey},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := UserKeyFromString(tt.args.keyStr)
-			if (err != nil) != tt.wantErr {
+			if tt.wantErr != nil && !errors.Is(err, tt.wantErr) {
 				t.Errorf("UserKeyFromString() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
