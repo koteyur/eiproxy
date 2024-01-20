@@ -60,6 +60,14 @@ var (
 func main() {
 	defer ensureSingleAppInstance()()
 
+	// Try to set main window icon.
+	// ID of GrpIcon assigned by rsrc tool: rsrc -manifest app.manifest -ico app.ico -o rsrc.syso
+	const appIconID = 2
+	var appIcon *walk.Icon
+	if icon, err := walk.NewIconFromResourceId(appIconID); err == nil {
+		appIcon = icon
+	}
+
 	err := dec.MainWindow{
 		Font:     dec.Font{PointSize: walk.IntFrom96DPI(12, 96)},
 		Title:    mwTitle,
@@ -119,8 +127,22 @@ func main() {
 				},
 			},
 
-			// Status bar. Not using normal one, as it has sizing grip, which I couldn't disable.
 			dec.VSpacer{},
+
+			dec.Composite{
+				Layout: dec.HBox{},
+				Children: []dec.Widget{
+					dec.HSpacer{},
+					dec.PushButton{
+						Text: "About",
+						OnClicked: func() {
+							showAbout(appIcon)
+						},
+					},
+				},
+			},
+
+			// Status bar. Not using normal one, as it has sizing grip, which I couldn't disable.
 			dec.VSeparator{},
 			dec.Composite{
 				Layout:    dec.HBox{Margins: dec.Margins{Left: 5, Right: 5, Bottom: 2, Top: 2}},
@@ -146,14 +168,6 @@ func main() {
 	// Disable maximize button and set window not resizable
 	win.SetWindowLong(mainWnd.Handle(), win.GWL_STYLE,
 		win.GetWindowLong(mainWnd.Handle(), win.GWL_STYLE) & ^win.WS_MAXIMIZEBOX & ^win.WS_SIZEBOX)
-
-	// Try to set main window icon.
-	// ID of GrpIcon assigned by rsrc tool: rsrc -manifest app.manifest -ico app.ico -o rsrc.syso
-	const appIconID = 2
-	var appIcon *walk.Icon
-	if icon, err := walk.NewIconFromResourceId(appIconID); err == nil {
-		appIcon = icon
-	}
 
 	_ = mainWnd.SetIcon(appIcon)
 
@@ -366,6 +380,65 @@ func showEnterKeyDialog(reason string) bool {
 	cfg.UserKey = key
 	saveConfig()
 	return true
+}
+
+func showAbout(icon walk.Image) {
+	var aboutText = `Tool for setting up public servers in the Evil Islands game without requiring a public IP or VPN. It's free and open source.
+
+- Version: ` + client.ClientVer + `
+- Author: Yury Kotov (aka Demoth)
+- Site: <a href="` + webSite + `">` + webSite + `</a>
+- Source code: <a href="https://github.com/koteyur/eiproxy">https://github.com/koteyur/eiproxy</a>
+
+Third party components used:
+- Walk: <a href="https://github.com/lxn/walk">https://github.com/lxn/walk</a>
+- Win: <a href="https://github.com/lxn/win">https://github.com/lxn/win</a>
+`
+
+	var btnOk *walk.PushButton
+	var dlg *walk.Dialog
+	_ = dec.Dialog{
+		AssignTo:      &dlg,
+		Title:         "About",
+		Icon:          icon,
+		Font:          dec.Font{PointSize: walk.IntFrom96DPI(10, 96)},
+		CancelButton:  &btnOk,
+		DefaultButton: &btnOk,
+		Layout:        dec.VBox{},
+		Children: []dec.Widget{
+			dec.ImageView{
+				Image:   icon,
+				MinSize: dec.Size{Width: 64, Height: 64},
+				Mode:    dec.ImageViewModeZoom,
+			},
+			dec.TextLabel{
+				Font:          dec.Font{PointSize: walk.IntFrom96DPI(12, 96), Bold: true},
+				TextAlignment: dec.AlignHCenterVCenter,
+				Text:          mwTitle,
+			},
+			dec.LinkLabel{
+				OnLinkActivated: onLinkActivated,
+				MaxSize:         dec.Size{Width: 300},
+				Text:            aboutText,
+			},
+			dec.Composite{
+				Layout: dec.HBox{},
+				Children: []dec.Widget{
+					dec.HSpacer{},
+					dec.PushButton{
+						AssignTo: &btnOk,
+						Text:     "OK",
+						OnClicked: func() {
+							dlg.Accept()
+						},
+					},
+					dec.HSpacer{},
+				},
+			},
+		},
+	}.Create(mainWnd)
+
+	_ = dlg.Run()
 }
 
 func createTrayIcon(mw *walk.MainWindow, icon *walk.Icon) *walk.NotifyIcon {
