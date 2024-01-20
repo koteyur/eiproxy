@@ -136,14 +136,8 @@ func main() {
 					dec.HSpacer{},
 					dec.HSeparator{},
 					dec.LinkLabel{
-						Text: fmt.Sprintf(`<a id="this" href="%s">website</a>`, webSite),
-						OnLinkActivated: func(link *walk.LinkLabelLink) {
-							win.ShellExecute(mainWnd.Handle(),
-								syscall.StringToUTF16Ptr("open"),
-								syscall.StringToUTF16Ptr(webSite),
-								nil, nil, win.SW_SHOWNORMAL,
-							)
-						},
+						Text:            fmt.Sprintf(`<a id="this" href="%s">website</a>`, webSite),
+						OnLinkActivated: onLinkActivated,
 					},
 					dec.HSeparator{},
 					dec.Label{Text: fmt.Sprintf("ver. %s", client.ClientVer)},
@@ -319,14 +313,8 @@ func showEnterKeyDialog(reason string) bool {
 		},
 		Children: []dec.Widget{
 			dec.LinkLabel{
-				Text: text,
-				OnLinkActivated: func(link *walk.LinkLabelLink) {
-					win.ShellExecute(mainWnd.Handle(),
-						syscall.StringToUTF16Ptr("open"),
-						syscall.StringToUTF16Ptr(webSite),
-						nil, nil, win.SW_SHOWNORMAL,
-					)
-				},
+				Text:            text,
+				OnLinkActivated: onLinkActivated,
 				MaxSize: dec.Size{
 					Width:  300,
 					Height: 100,
@@ -669,6 +657,14 @@ func showErrorF(format string, args ...interface{}) {
 func showMessageF(title string, style walk.MsgBoxStyle, format string, args ...interface{}) {
 	text := fmt.Sprintf(format, args...)
 	walk.MsgBox(getAndShowMainWindow(), title, text, style)
+}
+
+func onLinkActivated(link *walk.LinkLabelLink) {
+	win.ShellExecute(mainWnd.Handle(),
+		syscall.StringToUTF16Ptr("open"),
+		syscall.StringToUTF16Ptr(link.URL()),
+		nil, nil, win.SW_SHOWNORMAL,
+	)
 }
 
 func apiRequest(method, url string, authKey string, params, response any) error {
