@@ -655,8 +655,74 @@ func showErrorF(format string, args ...interface{}) {
 }
 
 func showMessageF(title string, style walk.MsgBoxStyle, format string, args ...interface{}) {
-	text := fmt.Sprintf(format, args...)
-	walk.MsgBox(getAndShowMainWindow(), title, text, style)
+	msgBox(nil, title, style, format, args...)
+}
+
+func msgBox(
+	owner walk.Form,
+	title string,
+	style walk.MsgBoxStyle,
+	format string,
+	args ...interface{},
+) {
+	if owner == nil {
+		owner = walk.App().ActiveForm()
+		if owner == nil {
+			owner = getAndShowMainWindow()
+		}
+	}
+
+	var icon *walk.Icon
+	switch style {
+	case walk.MsgBoxIconInformation:
+		icon = walk.IconInformation()
+	case walk.MsgBoxIconError:
+		icon = walk.IconError()
+	case walk.MsgBoxIconWarning:
+		icon = walk.IconWarning()
+	default:
+		fatal(fmt.Errorf("unknown message box style: %v", style))
+	}
+
+	var btnOk *walk.PushButton
+	var dlg *walk.Dialog
+	err := dec.Dialog{
+		AssignTo:      &dlg,
+		Title:         title,
+		Icon:          icon,
+		Font:          dec.Font{PointSize: walk.IntFrom96DPI(10, 96)},
+		CancelButton:  &btnOk,
+		DefaultButton: &btnOk,
+		Layout:        dec.VBox{},
+		Children: []dec.Widget{
+			dec.LinkLabel{
+				OnLinkActivated: onLinkActivated,
+				MaxSize:         dec.Size{Width: 300},
+				Text:            fmt.Sprintf(format, args...),
+			},
+			dec.Composite{
+				Layout: dec.HBox{},
+				Children: []dec.Widget{
+					dec.HSpacer{},
+					dec.PushButton{
+						AssignTo: &btnOk,
+						Text:     "OK",
+						OnClicked: func() {
+							dlg.Accept()
+						},
+					},
+					dec.HSpacer{},
+				},
+			},
+		},
+	}.Create(owner)
+	if err != nil {
+		// Fallback to message box.
+		walk.MsgBox(owner, title, fmt.Sprintf(format, args...), style)
+		return
+	}
+
+	_ = dlg.Run()
 }
 
 func onLinkActivated(link *walk.LinkLabelLink) {
