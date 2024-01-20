@@ -44,11 +44,12 @@ type config struct {
 var (
 	mainWnd         *walk.MainWindow
 	startBt, stopBt *walk.PushButton
+	proxyStatus     *walk.TextEdit
 	proxyIPEdit     *walk.TextEdit
 
 	cfg           config
 	defaultConfig = config{
-		ServerURL:  "https://ei.koteyur.dev/proxy",
+		ServerURL:  webSite,
 		MasterAddr: "vps.gipat.ru:28004",
 		UserKey:    userKeyPlaceholder,
 	}
@@ -67,65 +68,58 @@ func main() {
 		OnSizeChanged: func() {
 			_ = mainWnd.SetSize(walk.Size{Width: mwWidth, Height: mwHeight})
 		},
-
-		Layout: dec.Grid{Columns: 1, MarginsZero: true, SpacingZero: true},
+		Layout: dec.VBox{
+			MarginsZero: true,
+			SpacingZero: true,
+		},
 		Children: []dec.Widget{
 			dec.Composite{
-				Layout: dec.Grid{Columns: 1},
+				Layout: dec.HBox{},
 				Children: []dec.Widget{
-					// dec.Composite{
-					// 	Layout: dec.Grid{Columns: 3, MarginsZero: true},
-					// 	Children: []dec.Widget{
 					dec.PushButton{
 						Text:      "Start",
 						OnClicked: start,
 						AssignTo:  &startBt,
 					},
-					// dec.CheckBox{
-					// 	Text: "Autorun",
-					// },
 					dec.PushButton{
 						Text:      "Stop",
 						Enabled:   false,
 						OnClicked: func() {},
 						AssignTo:  &stopBt,
 					},
-					dec.Composite{
-						Layout: dec.Flow{},
-						Font:   dec.Font{PointSize: walk.IntFrom96DPI(10, 96)},
-						Children: []dec.Widget{
-							dec.TextLabel{
-								Text: "Your proxy IP:",
-							},
-							dec.TextEdit{
-								Text:     "",
-								Enabled:  false,
-								ReadOnly: true,
-								AssignTo: &proxyIPEdit,
-							},
-						},
+				},
+			},
+			dec.Composite{
+				Layout:    dec.Grid{Columns: 2},
+				MaxSize:   dec.Size{Height: 10},
+				Alignment: dec.AlignHCenterVNear,
+				Children: []dec.Widget{
+					dec.TextLabel{
+						Text: "Status:",
 					},
-					// 	},
-					// },
-					// dec.PushButton{
-					// 	Text:      "Test connection",
-					// 	OnClicked: testConnection,
-					// },
-					// dec.PushButton{
-					// 	Text:      "Edit Config",
-					// 	OnClicked: runConfigDialog,
-					// },
-					dec.PushButton{
-						Text: "Exit",
-						OnClicked: func() {
-							mainWnd.Close()
-							walk.App().Exit(0)
-						},
+					dec.TextEdit{
+						Font:          dec.Font{PointSize: walk.IntFrom96DPI(9, 96)},
+						Text:          "stopped",
+						Enabled:       false,
+						ReadOnly:      true,
+						TextAlignment: dec.AlignFar,
+						AssignTo:      &proxyStatus,
+					},
+					dec.TextLabel{
+						Text: "Proxy IP:",
+					},
+					dec.TextEdit{
+						Font:          dec.Font{PointSize: walk.IntFrom96DPI(9, 96)},
+						Text:          "unassigned",
+						Enabled:       false,
+						ReadOnly:      true,
+						TextAlignment: dec.AlignFar,
+						AssignTo:      &proxyIPEdit,
 					},
 				},
 			},
 
-			// Status bar. Not using normal one, as it has sizing grip, which I couldn't disable
+			// Status bar. Not using normal one, as it has sizing grip, which I couldn't disable.
 			dec.VSpacer{},
 			dec.VSeparator{},
 			dec.Composite{
@@ -207,7 +201,7 @@ func start() {
 
 	// Disable start button and enable stop button.
 	startBt.SetEnabled(false)
-	stopBt.SetEnabled(true)
+	proxyStatus.SetText("starting...")
 	handle := stopBt.Clicked().Attach(func() { cancel() })
 
 	if isGameRunning() {
@@ -272,18 +266,21 @@ func start() {
 			startBt.SetEnabled(true)
 			proxyIPEdit.SetEnabled(false)
 			proxyIPEdit.SetText("")
+			proxyStatus.SetText("stopped")
 			stopBt.Clicked().Detach(handle)
 		}
 		stopAndWait = func() {}
 	}()
 
 	go func() {
-		addr := c.GetProxyAddr(100 * time.Millisecond)
+		addr := c.GetProxyAddr(5000 * time.Millisecond)
 		if addr == "" {
 			return
 		}
 		proxyIPEdit.SetEnabled(true)
 		proxyIPEdit.SetText(addr)
+		proxyStatus.SetText("started")
+		stopBt.SetEnabled(true)
 	}()
 }
 
