@@ -296,7 +296,7 @@ func showEnterKeyDialog(reason string) bool {
 		text += reason + ".\n\n"
 	}
 	text += "Please enter your access key. You can get it here: " +
-		fmt.Sprintf(`<a id="this" href="%s">website</a>`, webSite)
+		fmt.Sprintf(`<a id="this" href="%s">%s</a>`, webSite, webSite)
 
 	_ = dec.Dialog{
 		AssignTo:      &dlg,
