@@ -27,7 +27,6 @@ import (
 )
 
 const (
-	version            = "0.2.1"
 	mwWidth            = 280
 	mwHeight           = 300
 	mwTitle            = "EI Proxy"
@@ -146,7 +145,7 @@ func main() {
 						},
 					},
 					dec.HSeparator{},
-					dec.Label{Text: fmt.Sprintf("ver. %s", version)},
+					dec.Label{Text: fmt.Sprintf("ver. %s", client.ClientVer)},
 				},
 			},
 		},

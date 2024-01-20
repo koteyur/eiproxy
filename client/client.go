@@ -18,6 +18,11 @@ import (
 	"time"
 )
 
+const (
+	ClientVer   = "0.2.1"
+	ProtocolVer = "1.0"
+)
+
 const dataChanSize = 1000
 
 type ipv4 [net.IPv4len]byte
@@ -142,15 +147,20 @@ func (c *client) GetProxyAddr(timeout time.Duration) string {
 }
 
 func (c *client) connect(ctx context.Context) (port int, token protocol.Token, err error) {
-	url, err := url.JoinPath(c.cfg.ServerURL, "api/connect")
+	reqURL, err := url.JoinPath(c.cfg.ServerURL, "api/connect")
 	if err != nil {
 		return 0, protocol.Token{}, fmt.Errorf("failed to join url: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, nil)
 	if err != nil {
 		return 0, protocol.Token{}, fmt.Errorf("failed to create request: %w", err)
 	}
+
+	q := req.URL.Query()
+	q.Add("proto", ProtocolVer)
+	q.Add("client", ClientVer)
+	req.URL.RawQuery = q.Encode()
 
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.cfg.UserKey))
 
