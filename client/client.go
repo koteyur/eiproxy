@@ -174,7 +174,7 @@ func (c *client) connect(ctx context.Context) (port int, token protocol.Token, e
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return 0, protocol.Token{}, fmt.Errorf("server returned %d", resp.StatusCode)
+		return 0, protocol.Token{}, fmt.Errorf("server returned: %s", http.StatusText(resp.StatusCode))
 	}
 
 	var connResp protocol.ConnectionResponse
