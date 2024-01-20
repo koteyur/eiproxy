@@ -337,7 +337,7 @@ func (c *client) proxyMainLoopReader(ctx context.Context, conn *net.UDPConn) err
 			// Empty packets are currently not supported.
 			continue
 		}
-		if n >= protocol.AddrDataMinSize {
+		if n > protocol.AddrSize {
 			addr, data := protocol.DecodeAddrData(buf[:n])
 			dataCh := c.getWorkerChan(addr, false)
 			select {
@@ -487,7 +487,7 @@ func (c *client) handleWorker(
 				continue
 			}
 
-			data := make([]byte, 0, n+protocol.AddrDataMinSize-1)
+			data := make([]byte, 0, n+protocol.AddrSize)
 			data = protocol.EncodeAddrData(data, remoteAddr, buf[:n])
 			select {
 			case c.dataToServerCh <- data:

@@ -9,10 +9,10 @@ import (
 
 var ErrInvalidToken = errors.New("invalid token")
 
-const AddrDataMinSize = 4 /*ipv4*/ + 2 /*port*/ + 1 /*min data*/
+const AddrSize = 4 /*ipv4*/ + 2 /*port*/
 
 // Temporary token to auth in UDP proxy.
-type Token [AddrDataMinSize - 1]byte
+type Token [AddrSize]byte
 
 func NewToken() (Token, error) {
 	var token Token
@@ -20,23 +20,25 @@ func NewToken() (Token, error) {
 	return token, err
 }
 
-func EncodeAddrData(buf []byte, addr *net.UDPAddr, data []byte) []byte {
+func EncodeAddr(buf []byte, addr *net.UDPAddr) []byte {
 	ipv4 := addr.IP.To4()
 	if ipv4 == nil {
 		panic("only ipv4 is supported")
 	}
-	if len(data) == 0 {
-		panic("data must not be empty")
-	}
 
 	buf = append(buf, ipv4...)
 	buf = binary.LittleEndian.AppendUint16(buf, uint16(addr.Port))
+	return buf
+}
+
+func EncodeAddrData(buf []byte, addr *net.UDPAddr, data []byte) []byte {
+	buf = EncodeAddr(buf, addr)
 	buf = append(buf, data...)
 	return buf
 }
 
 func DecodeAddrData(data []byte) (*net.UDPAddr, []byte) {
-	if len(data) < AddrDataMinSize {
+	if len(data) < AddrSize {
 		panic("data is too short")
 	}
 	return &net.UDPAddr{
