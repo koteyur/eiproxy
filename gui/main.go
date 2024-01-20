@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -473,17 +474,29 @@ func ensureSingleAppInstance() func() {
 	}
 }
 
+// getConfigPath returns path to config file in the same directory as executable.
+func getConfigPath() string {
+	exePath, err := os.Executable()
+	if err != nil {
+		fatal(err)
+	}
+	dir := filepath.Dir(exePath)
+	return filepath.Join(dir, "eiproxy.json")
+}
+
 func loadConfig() {
+	configPath := getConfigPath()
+
 	// Load eiproxy.json and if it doesn't exist create new one using default.
 	// If fail, show message box and exit.
-	data, err := os.ReadFile("eiproxy.json")
+	data, err := os.ReadFile(configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			data, err = json.MarshalIndent(defaultConfig, "", "  ")
 			if err != nil {
 				fatal(err)
 			}
-			err = os.WriteFile("eiproxy.json", data, 0644)
+			err = os.WriteFile(configPath, data, 0644)
 			if err != nil {
 				fatal(err)
 			}
@@ -513,7 +526,7 @@ func saveConfig() {
 	if err != nil {
 		fatal(err)
 	}
-	err = os.WriteFile("eiproxy.json", data, 0644)
+	err = os.WriteFile(getConfigPath(), data, 0644)
 	if err != nil {
 		fatal(err)
 	}
