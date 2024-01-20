@@ -334,7 +334,7 @@ func showEnterKeyDialog(reason string) bool {
 					dec.PushButton{
 						AssignTo: &buttonOk,
 						Text:     "OK",
-						Enabled:  cfg.UserKey != "",
+						Enabled:  false,
 						OnClicked: func() {
 							key = keyEdit.Text()
 							err := checkKey(key)
