@@ -1,5 +1,7 @@
 package protocol
 
+import "time"
+
 type ConnectionResponse struct {
 	Token        *Token          `json:"token,omitempty"`
 	Port         *int            `json:"port,omitempty"`
@@ -33,4 +35,12 @@ func (c ConnectionCode) String() string {
 
 func (c ConnectionCode) Error() string {
 	return c.String()
+}
+
+type UserResponse struct {
+	ID           int64     `json:"id"`
+	Email        string    `json:"email"`
+	Port         int       `json:"port"`
+	CreationTime time.Time `json:"creation_time"`
+	LastUsedTime time.Time `json:"last_used_time"`
 }

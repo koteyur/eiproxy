@@ -32,7 +32,13 @@ type client struct {
 	port               int
 }
 
-func New(cfg Config) *client {
+type Client interface {
+	Run(ctx context.Context) error
+	GetProxyAddr(timeout time.Duration) string
+	GetUser(ctx context.Context) (protocol.UserResponse, error)
+}
+
+func New(cfg Config) Client {
 	return &client{
 		cfg:                cfg,
 		dataToServerCh:     make(chan []byte, dataChanSize),

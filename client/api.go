@@ -2,49 +2,32 @@ package client
 
 import (
 	"context"
+	"eiproxy/common"
 	"eiproxy/protocol"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
-	"time"
 )
 
 func (c *client) connect(ctx context.Context) (port int, token protocol.Token, err error) {
-	reqURL, err := url.JoinPath(c.cfg.ServerURL, "api/connect")
+	u, err := url.Parse(c.cfg.ServerURL)
 	if err != nil {
-		return 0, protocol.Token{}, fmt.Errorf("failed to join url: %w", err)
+		return 0, protocol.Token{}, fmt.Errorf("failed to parse url: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, nil)
-	if err != nil {
-		return 0, protocol.Token{}, fmt.Errorf("failed to create request: %w", err)
-	}
+	u = u.JoinPath("api/connect")
 
-	q := req.URL.Query()
+	q := u.Query()
 	q.Add("proto", ProtocolVer)
 	q.Add("client", ClientVer)
-	req.URL.RawQuery = q.Encode()
-
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.cfg.UserKey))
-
-	hc := http.Client{
-		Timeout: 5 * time.Second,
-	}
-	resp, err := hc.Do(req)
-	if err != nil {
-		return 0, protocol.Token{}, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return 0, protocol.Token{}, fmt.Errorf("server returned: %s", http.StatusText(resp.StatusCode))
-	}
+	u.RawQuery = q.Encode()
 
 	var connResp protocol.ConnectionResponse
-	decoder := json.NewDecoder(resp.Body)
-	if err := decoder.Decode(&connResp); err != nil {
-		return 0, protocol.Token{}, fmt.Errorf("failed to decode response: %w", err)
+
+	err = common.MakeApiRequestWithContext(
+		ctx, http.MethodPost, u.String(), c.cfg.UserKey.String(), nil, &connResp)
+	if err != nil {
+		return 0, protocol.Token{}, err
 	}
 
 	if connResp.ErrorCode != nil {
@@ -58,4 +41,17 @@ func (c *client) connect(ctx context.Context) (port int, token protocol.Token, e
 	}
 
 	return *connResp.Port, *connResp.Token, nil
+}
+
+func (c *client) GetUser(ctx context.Context) (protocol.UserResponse, error) {
+	var response protocol.UserResponse
+
+	reqURL, err := url.JoinPath(c.cfg.ServerURL, "api/user")
+	if err != nil {
+		return response, fmt.Errorf("failed to build request url: %w", err)
+	}
+
+	err = common.MakeApiRequestWithContext(
+		ctx, http.MethodGet, reqURL, c.cfg.UserKey.String(), nil, &response)
+	return response, err
 }

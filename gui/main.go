@@ -5,12 +5,12 @@ package main
 import (
 	"context"
 	"eiproxy/client"
+	"eiproxy/common"
 	"eiproxy/protocol"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"syscall"
 	"time"
@@ -210,14 +210,8 @@ func start() {
 		return
 	}
 
-	clientCfg := client.Config{
-		MasterAddr: cfg.MasterAddr,
-		ServerURL:  cfg.ServerURL,
-		UserKey:    userKey,
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
-	c := client.New(clientCfg)
+	c := newClient(userKey)
 
 	// Disable start button and enable stop button.
 	startBt.SetEnabled(false)
@@ -516,15 +510,14 @@ func createTrayIcon(mw *walk.MainWindow, icon *walk.Icon) *walk.NotifyIcon {
 func checkKey(key string) error {
 	key = normalizeKey(key)
 
-	_, err := protocol.UserKeyFromString(key)
+	userKey, err := protocol.UserKeyFromString(key)
 	if err != nil {
 		return err
 	}
 
-	url, _ := url.JoinPath(cfg.ServerURL, "api/user")
-	err = apiRequest(http.MethodGet, url, key, nil, nil)
+	_, err = newClient(userKey).GetUser(context.Background())
 	if err != nil {
-		var httpErr httpError
+		var httpErr common.HttpError
 		if errors.As(err, &httpErr) {
 			switch httpErr {
 			case http.StatusUnauthorized:
@@ -577,6 +570,15 @@ func getAndShowMainWindow() walk.Form {
 		return mainWnd
 	}
 	return nil
+}
+
+func newClient(userKey protocol.UserKey) client.Client {
+	clientCfg := client.Config{
+		MasterAddr: cfg.MasterAddr,
+		ServerURL:  cfg.ServerURL,
+		UserKey:    userKey,
+	}
+	return client.New(clientCfg)
 }
 
 func fatal(err error) {
