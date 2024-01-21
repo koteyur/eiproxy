@@ -3,23 +3,17 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"eiproxy/client"
 	"eiproxy/protocol"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
-	"unsafe"
 
 	"github.com/lxn/walk"
 	dec "github.com/lxn/walk/declarative"
@@ -35,24 +29,11 @@ const (
 	webSite            = "https://ei.koteyur.dev/proxy"
 )
 
-type config struct {
-	MasterAddr string
-	ServerURL  string
-	UserKey    string
-}
-
 var (
 	mainWnd         *walk.MainWindow
 	startBt, stopBt *walk.PushButton
 	proxyStatus     *walk.TextEdit
 	proxyIPEdit     *walk.TextEdit
-
-	cfg           config
-	defaultConfig = config{
-		ServerURL:  webSite,
-		MasterAddr: "vps.gipat.ru:28004",
-		UserKey:    userKeyPlaceholder,
-	}
 
 	stopAndWait = func() {}
 
@@ -189,7 +170,7 @@ func main() {
 func start() {
 	loadConfig()
 
-	if cfg.UserKey == userKeyPlaceholder || cfg.UserKey == "" {
+	if cfg.UserKey == "" {
 		ok := showEnterKeyDialog("")
 		if !ok {
 			return
@@ -532,90 +513,6 @@ func createTrayIcon(mw *walk.MainWindow, icon *walk.Icon) *walk.NotifyIcon {
 	return ni
 }
 
-func isGameRunning() bool {
-	hWnd := win.FindWindow(windows.StringToUTF16Ptr("EIGAME"),
-		windows.StringToUTF16Ptr("Evil Islands"))
-	return hWnd != 0
-}
-
-func ensureSingleAppInstance() func() {
-	handle, err := windows.CreateMutex(nil, false, windows.StringToUTF16Ptr("EIProxyClient"))
-	if err != nil {
-		if errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
-			const walkWindowClass = `\o/ Walk_MainWindow_Class \o/`
-			hWnd := win.FindWindow(windows.StringToUTF16Ptr(walkWindowClass),
-				windows.StringToUTF16Ptr(mwTitle))
-			if hWnd != 0 {
-				win.ShowWindow(hWnd, win.SW_RESTORE)
-				win.SetForegroundWindow(hWnd)
-			}
-			os.Exit(0)
-		}
-		fatal(err)
-	}
-	return func() {
-		_ = windows.CloseHandle(handle)
-	}
-}
-
-// getConfigPath returns path to config file in the same directory as executable.
-func getConfigPath() string {
-	exePath, err := os.Executable()
-	if err != nil {
-		fatal(err)
-	}
-	dir := filepath.Dir(exePath)
-	return filepath.Join(dir, "eiproxy.json")
-}
-
-func loadConfig() {
-	configPath := getConfigPath()
-
-	// Load eiproxy.json and if it doesn't exist create new one using default.
-	// If fail, show message box and exit.
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			data, err = json.MarshalIndent(defaultConfig, "", "  ")
-			if err != nil {
-				fatal(err)
-			}
-			err = os.WriteFile(configPath, data, 0644)
-			if err != nil {
-				fatal(err)
-			}
-			cfg = defaultConfig
-			return
-		}
-		fatal(err)
-	}
-
-	// Try to unmarshal config file.
-	err = json.Unmarshal(data, &cfg)
-	if err != nil {
-		fatal(err)
-	}
-
-	if cfg.UserKey == userKeyPlaceholder {
-		cfg.UserKey = ""
-	}
-
-	cfg.UserKey = normalizeKey(cfg.UserKey)
-}
-
-func saveConfig() {
-	cfg.UserKey = normalizeKey(cfg.UserKey)
-
-	data, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		fatal(err)
-	}
-	err = os.WriteFile(getConfigPath(), data, 0644)
-	if err != nil {
-		fatal(err)
-	}
-}
-
 func checkKey(key string) error {
 	key = normalizeKey(key)
 
@@ -644,89 +541,30 @@ func checkKey(key string) error {
 	return nil
 }
 
-func normalizeKey(key string) string {
-	return strings.ToUpper(strings.TrimSpace(key))
+func isGameRunning() bool {
+	hWnd := win.FindWindow(windows.StringToUTF16Ptr("EIGAME"),
+		windows.StringToUTF16Ptr("Evil Islands"))
+	return hWnd != 0
 }
 
-func registryKeyString(rootKey win.HKEY, subKeyPath, valueName string) (value string, err error) {
-	subKeyPathUTF16, _ := syscall.UTF16PtrFromString(subKeyPath)
-	valueNameUTF16, _ := syscall.UTF16PtrFromString(valueName)
-
-	var hKey win.HKEY
-	if win.RegOpenKeyEx(
-		rootKey,
-		subKeyPathUTF16,
-		0,
-		win.KEY_READ,
-		&hKey) != win.ERROR_SUCCESS {
-
-		return "", errors.New("registry key not found")
+func ensureSingleAppInstance() func() {
+	handle, err := windows.CreateMutex(nil, false, windows.StringToUTF16Ptr("EIProxyClient"))
+	if err != nil {
+		if errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
+			const walkWindowClass = `\o/ Walk_MainWindow_Class \o/`
+			hWnd := win.FindWindow(windows.StringToUTF16Ptr(walkWindowClass),
+				windows.StringToUTF16Ptr(mwTitle))
+			if hWnd != 0 {
+				win.ShowWindow(hWnd, win.SW_RESTORE)
+				win.SetForegroundWindow(hWnd)
+			}
+			os.Exit(0)
+		}
+		fatal(err)
 	}
-	defer win.RegCloseKey(hKey)
-
-	var typ uint32
-	var data []uint16
-	var bufSize uint32
-
-	if win.ERROR_SUCCESS != win.RegQueryValueEx(
-		hKey,
-		valueNameUTF16,
-		nil,
-		&typ,
-		nil,
-		&bufSize) {
-
-		return "", errors.New("registry value not found")
+	return func() {
+		_ = windows.CloseHandle(handle)
 	}
-
-	data = make([]uint16, bufSize/2+1)
-
-	if win.ERROR_SUCCESS != win.RegQueryValueEx(
-		hKey,
-		valueNameUTF16,
-		nil,
-		&typ,
-		(*byte)(unsafe.Pointer(&data[0])),
-		&bufSize) {
-
-		return "", errors.New("registry value not found")
-	}
-
-	return syscall.UTF16ToString(data), nil
-}
-
-func setRegistryKeyString(rootKey win.HKEY, subKeyPath, valueName, value string) error {
-	subKeyPathUTF16, _ := syscall.UTF16PtrFromString(subKeyPath)
-	valueNameUTF16, _ := syscall.UTF16PtrFromString(valueName)
-	valueUTF16, _ := syscall.UTF16PtrFromString(value)
-
-	tmp, _ := syscall.UTF16FromString(value)
-	valueUTF16Len := len(tmp)
-
-	var hKey win.HKEY
-	if win.RegOpenKeyEx(
-		rootKey,
-		subKeyPathUTF16,
-		0,
-		win.KEY_WRITE,
-		&hKey) != win.ERROR_SUCCESS {
-
-		return errors.New("registry key not found")
-	}
-	defer win.RegCloseKey(hKey)
-
-	if win.ERROR_SUCCESS != win.RegSetValueEx(
-		hKey,
-		valueNameUTF16,
-		0,
-		win.REG_SZ,
-		(*byte)(unsafe.Pointer(valueUTF16)),
-		uint32(valueUTF16Len*2)) {
-
-		return errors.New("failed to set registry value")
-	}
-
-	return nil
 }
 
 func getAndShowMainWindow() walk.Form {
@@ -755,134 +593,9 @@ func showErrorF(format string, args ...interface{}) {
 }
 
 func showMessageF(title string, style walk.MsgBoxStyle, format string, args ...interface{}) {
-	msgBox(nil, title, style, format, args...)
-}
-
-func msgBox(
-	owner walk.Form,
-	title string,
-	style walk.MsgBoxStyle,
-	format string,
-	args ...interface{},
-) {
+	owner := walk.App().ActiveForm()
 	if owner == nil {
-		owner = walk.App().ActiveForm()
-		if owner == nil {
-			owner = getAndShowMainWindow()
-		}
+		owner = getAndShowMainWindow()
 	}
-
-	var icon *walk.Icon
-	switch style {
-	case walk.MsgBoxIconInformation:
-		icon = walk.IconInformation()
-	case walk.MsgBoxIconError:
-		icon = walk.IconError()
-	case walk.MsgBoxIconWarning:
-		icon = walk.IconWarning()
-	default:
-		fatal(fmt.Errorf("unknown message box style: %v", style))
-	}
-
-	var btnOk *walk.PushButton
-	var dlg *walk.Dialog
-	err := dec.Dialog{
-		AssignTo:      &dlg,
-		Title:         title,
-		Icon:          icon,
-		Font:          dec.Font{PointSize: walk.IntFrom96DPI(10, 96)},
-		CancelButton:  &btnOk,
-		DefaultButton: &btnOk,
-		Layout:        dec.VBox{},
-		Children: []dec.Widget{
-			dec.LinkLabel{
-				OnLinkActivated: onLinkActivated,
-				MaxSize:         dec.Size{Width: 300},
-				Text:            fmt.Sprintf(format, args...),
-			},
-			dec.Composite{
-				Layout: dec.HBox{},
-				Children: []dec.Widget{
-					dec.HSpacer{},
-					dec.PushButton{
-						AssignTo: &btnOk,
-						Text:     "OK",
-						OnClicked: func() {
-							dlg.Accept()
-						},
-					},
-					dec.HSpacer{},
-				},
-			},
-		},
-	}.Create(owner)
-	if err != nil {
-		// Fallback to message box.
-		walk.MsgBox(owner, title, fmt.Sprintf(format, args...), style)
-		return
-	}
-
-	_ = dlg.Run()
-}
-
-func onLinkActivated(link *walk.LinkLabelLink) {
-	win.ShellExecute(mainWnd.Handle(),
-		syscall.StringToUTF16Ptr("open"),
-		syscall.StringToUTF16Ptr(link.URL()),
-		nil, nil, win.SW_SHOWNORMAL,
-	)
-}
-
-type httpError int
-
-func (e httpError) Error() string {
-	return http.StatusText(int(e))
-}
-
-func apiRequest(method, url string, authKey string, params, response any) error {
-	const timeout = 5 * time.Second
-
-	var reader io.Reader
-	if params != nil {
-		requestData, err := json.Marshal(params)
-		if err != nil {
-			return fmt.Errorf("failed to marshal request: %w", err)
-		}
-		reader = bytes.NewReader(requestData)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, method, url, reader)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	if authKey != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", authKey))
-	}
-	req.Header.Set("Content-type", "application/json")
-
-	hc := http.Client{
-		Timeout: timeout,
-	}
-	resp, err := hc.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return httpError(resp.StatusCode)
-	}
-
-	if response != nil {
-		decoder := json.NewDecoder(resp.Body)
-		if err := decoder.Decode(response); err != nil {
-			return fmt.Errorf("failed to decode response: %w", err)
-		}
-	}
-
-	return nil
+	msgBox(owner, title, style, format, args...)
 }
