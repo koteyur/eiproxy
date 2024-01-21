@@ -12,6 +12,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -162,6 +165,10 @@ func main() {
 
 	mainWnd.Closing().Attach(func(canceled *bool, reason walk.CloseReason) {
 		stopAndWait()
+	})
+
+	mainWnd.Starting().Attach(func() {
+		checkUpdates()
 	})
 
 	mainWnd.Run()
@@ -532,6 +539,79 @@ func checkKey(key string) error {
 	}
 
 	return nil
+}
+
+func checkUpdates() {
+	loadConfig()
+
+	// Update check disabled.
+	if cfg.UpdateCheckIntervalDays < 0 {
+		return
+	}
+
+	// Set default update check interval.
+	if cfg.UpdateCheckIntervalDays == 0 {
+		cfg.UpdateCheckIntervalDays = 7
+	}
+
+	interval := time.Duration(cfg.UpdateCheckIntervalDays) * 24 * time.Hour
+	if time.Since(cfg.UpdateCheckTime) < interval {
+		return
+	}
+	cfg.UpdateCheckTime = time.Now()
+	saveConfig()
+
+	var response []struct {
+		HTMLURL    string `json:"html_url"`
+		TagName    string `json:"tag_name"`
+		Draft      bool   `json:"draft"`
+		Prerelease bool   `json:"prerelease"`
+	}
+	err := common.MakeApiRequest(http.MethodGet,
+		"https://api.github.com/repos/koteyur/eiproxy/releases", "", nil, &response)
+	if err != nil {
+		showErrorF("Failed to check for updates: %v", err)
+		return
+	}
+
+	var verRegexp = regexp.MustCompile(`^v?\d+\.\d+\.\d+$`)
+
+	isVerGreater := func(v1, v2 string) bool {
+		// Assume that version looks like: v1.2.3 (3 numbers, no suffixes).
+		parts1 := strings.Split(strings.TrimPrefix(v1, "v"), ".")
+		parts2 := strings.Split(strings.TrimPrefix(v2, "v"), ".")
+		for i := 0; i < len(parts1) && i < len(parts2); i++ {
+			p1, _ := strconv.Atoi(parts1[i])
+			p2, _ := strconv.Atoi(parts2[i])
+			if p1 > p2 {
+				return true
+			} else if p1 < p2 {
+				return false
+			}
+		}
+		return false
+	}
+
+	var lastURL string
+	lastVer := client.ClientVer
+	includePrerelease := strings.HasPrefix(lastVer, "0.")
+	for _, r := range response {
+		if r.Draft || r.Prerelease && !includePrerelease || !verRegexp.MatchString(r.TagName) {
+			continue
+		}
+
+		if isVerGreater(r.TagName, lastVer) {
+			lastVer = r.TagName
+			lastURL = r.HTMLURL
+		}
+	}
+
+	if lastURL != "" {
+		showMessageF("New version available", walk.MsgBoxIconInformation,
+			"New version of EI Proxy is available: %s\n\n"+
+				"Please download it from: <a id=\"this\" href=\"%s\">%s</a>",
+			lastVer, lastURL, lastURL)
+	}
 }
 
 func isGameRunning() bool {

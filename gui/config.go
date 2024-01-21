@@ -5,12 +5,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type config struct {
-	MasterAddr string
-	ServerURL  string
-	UserKey    string
+	MasterAddr              string
+	ServerURL               string
+	UserKey                 string
+	UpdateCheckTime         time.Time
+	UpdateCheckIntervalDays int
 }
 
 var (
