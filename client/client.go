@@ -306,7 +306,7 @@ func (c *client) proxyMainLoopReader(ctx context.Context, conn *net.UDPConn) err
 	defer func() {
 		c.mut.Lock()
 		defer c.mut.Unlock()
-		clear(c.remoteAddrToDataCh)
+		c.remoteAddrToDataCh = make(map[addrPortV4]chan []byte, dataChanSize)
 	}()
 
 	c.getWorkerChan(c.masterAddr, true)
