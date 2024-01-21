@@ -154,7 +154,10 @@ func (c *client) proxyMainLoopReader(ctx context.Context, conn *net.UDPConn) err
 		c.remoteAddrToDataCh = make(map[addrPortV4]chan []byte, dataChanSize)
 	}()
 
-	c.getWorkerChan(c.masterAddr, true)
+	var wg sync.WaitGroup
+	defer wg.Wait()
+
+	c.getWorkerChan(ctx, &wg, c.masterAddr, true)
 
 	lastSuccess := time.Now()
 	var buf [2048]byte
@@ -194,7 +197,7 @@ func (c *client) proxyMainLoopReader(ctx context.Context, conn *net.UDPConn) err
 		}
 		if n > protocol.AddrSize {
 			addr, data := protocol.DecodeAddrData(buf[:n])
-			dataCh := c.getWorkerChan(addr, false)
+			dataCh := c.getWorkerChan(ctx, &wg, addr, false)
 			select {
 			case dataCh <- append([]byte(nil), data...):
 			default:
@@ -247,15 +250,13 @@ func (c *client) proxyMainLoopWriter(ctx context.Context, conn *net.UDPConn) err
 }
 
 func (c *client) handleWorker(
+	ctx context.Context,
 	remoteAddr *net.UDPAddr,
 	localIP net.IP,
 	dataCh <-chan []byte,
 	isMaster bool,
 ) error {
 	gameAddr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8888}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
 
 	port := 0
 	if isMaster {
@@ -269,6 +270,11 @@ func (c *client) handleWorker(
 	}
 	defer pc.Close()
 
+	go func() {
+		<-ctx.Done()
+		pc.Close()
+	}()
+
 	conn := pc.(*net.UDPConn)
 
 	log.Printf("Running worker: local addr: %v, remote addr: %v is master: %v",
@@ -281,7 +287,18 @@ func (c *client) handleWorker(
 	go func() {
 		defer wg.Done()
 		defer conn.Close()
-		for data := range dataCh {
+		for {
+			var data []byte
+			var ok bool
+			select {
+			case <-ctx.Done():
+				return
+			case data, ok = <-dataCh:
+				if !ok {
+					return
+				}
+			}
+
 			_, err = conn.WriteToUDP(data, gameAddr)
 			if err != nil {
 				if isCancelledOrClosed(err) {
@@ -356,7 +373,13 @@ func (c *client) handleWorker(
 	return nil
 }
 
-func (c *client) getWorkerChan(addr *net.UDPAddr, isMaster bool) chan []byte {
+func (c *client) getWorkerChan(
+	ctx context.Context,
+	wg *sync.WaitGroup,
+	addr *net.UDPAddr,
+	isMaster bool,
+) chan []byte {
+
 	ip := addr.IP.To4()
 	if ip == nil {
 		log.Printf("Received non-IPv4 address %v", addr)
@@ -383,8 +406,11 @@ func (c *client) getWorkerChan(addr *net.UDPAddr, isMaster bool) chan []byte {
 	dataCh := make(chan []byte, dataChanSize)
 	c.remoteAddrToDataCh[addr4] = dataCh
 
+	wg.Add(1)
 	go func(dataCh chan []byte) {
-		err := c.handleWorker(addr, localIP.ToIP(), dataCh, isMaster)
+		defer wg.Done()
+
+		err := c.handleWorker(ctx, addr, localIP.ToIP(), dataCh, isMaster)
 		if err != nil {
 			log.Printf("Worker for %v failed: %v", addr4, err)
 		}

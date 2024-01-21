@@ -238,7 +238,11 @@ func start() {
 	// Disable start button and enable stop button.
 	startBt.SetEnabled(false)
 	proxyStatus.SetText("starting...")
-	handle := stopBt.Clicked().Attach(func() { cancel() })
+	handle := stopBt.Clicked().Attach(func() {
+		stopBt.SetEnabled(false)
+		proxyStatus.SetText("stopping...")
+		cancel()
+	})
 
 	if isGameRunning() {
 		showWarningF("Game is running. Please RESTART it. " +
