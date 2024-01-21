@@ -30,6 +30,9 @@ func runMasterProxy(ctx context.Context, masterAddr string) error {
 	for {
 		clientConn, err := conn.Accept()
 		if err != nil {
+			if isCancelledOrClosed(err) {
+				return nil
+			}
 			return fmt.Errorf("master proxy: failed to accept: %w", err)
 		}
 
