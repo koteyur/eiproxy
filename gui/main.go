@@ -55,6 +55,11 @@ var (
 	}
 
 	stopAndWait = func() {}
+
+	errKeyUnauthorized   = errors.New("key unauthorized")
+	errServerMaintenance = errors.New("server maintenance")
+	errServerInvalid     = errors.New("server invalid")
+	errNetwork           = errors.New("network error")
 )
 
 func main() {
@@ -191,8 +196,28 @@ func start() {
 		}
 	} else {
 		if err := checkKey(cfg.UserKey); err != nil {
-			ok := showEnterKeyDialog("Failed to check access key: " + err.Error())
-			if !ok {
+			tryAgainMessage := ""
+			if errors.Is(err, protocol.ErrInvalidKey) {
+				tryAgainMessage = "Key has invalid format. Please try again."
+			} else if errors.Is(err, errKeyUnauthorized) {
+				tryAgainMessage = "It seems your access key is invalid. Please try again."
+			} else if errors.Is(err, errServerMaintenance) {
+				showErrorF("Server is under maintenance. Please try again later.\n\nError: %v", err)
+				return
+			} else if errors.Is(err, errServerInvalid) {
+				showErrorF("Server returned invalid response. If you changed server address "+
+					"in eiproxy.json, please check it.\n\nError: %v", err)
+				return
+			} else if errors.Is(err, errNetwork) {
+				showErrorF("Failed to connect to server. Please check your internet connection."+
+					"\n\nError: %v", err)
+				return
+			} else {
+				showErrorF("Failed to check access key: %v", err)
+				return
+			}
+
+			if ok := showEnterKeyDialog(tryAgainMessage); !ok {
 				return
 			}
 		}
@@ -307,7 +332,7 @@ func showEnterKeyDialog(reason string) bool {
 
 	text := ""
 	if reason != "" {
-		text += reason + ".\n\n"
+		text += reason + "\n\n"
 	}
 	text += "Please enter your access key. You can get it here: " +
 		fmt.Sprintf(`<a id="this" href="%s">%s</a>`, webSite, webSite)
@@ -600,16 +625,20 @@ func checkKey(key string) error {
 	}
 
 	url, _ := url.JoinPath(cfg.ServerURL, "api/user")
-	var response struct {
-		Error *string `json:"error,omitempty"`
-	}
-	err = apiRequest(http.MethodGet, url, key, nil, &response)
+	err = apiRequest(http.MethodGet, url, key, nil, nil)
 	if err != nil {
-		return err
-	}
-
-	if response.Error != nil {
-		return errors.New(*response.Error)
+		var httpErr httpError
+		if errors.As(err, &httpErr) {
+			switch httpErr {
+			case http.StatusUnauthorized:
+				return fmt.Errorf("%w: %w", errKeyUnauthorized, err)
+			case http.StatusServiceUnavailable:
+				return fmt.Errorf("%w: %w", errServerMaintenance, err)
+			default:
+				return fmt.Errorf("%w: %w", errServerInvalid, err)
+			}
+		}
+		return fmt.Errorf("%w: %w", errNetwork, err)
 	}
 
 	return nil
@@ -804,6 +833,12 @@ func onLinkActivated(link *walk.LinkLabelLink) {
 	)
 }
 
+type httpError int
+
+func (e httpError) Error() string {
+	return http.StatusText(int(e))
+}
+
 func apiRequest(method, url string, authKey string, params, response any) error {
 	const timeout = 5 * time.Second
 
@@ -839,12 +874,14 @@ func apiRequest(method, url string, authKey string, params, response any) error 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("%s", http.StatusText(resp.StatusCode))
+		return httpError(resp.StatusCode)
 	}
 
-	decoder := json.NewDecoder(resp.Body)
-	if err := decoder.Decode(response); err != nil {
-		return fmt.Errorf("failed to decode response: %w", err)
+	if response != nil {
+		decoder := json.NewDecoder(resp.Body)
+		if err := decoder.Decode(response); err != nil {
+			return fmt.Errorf("failed to decode response: %w", err)
+		}
 	}
 
 	return nil
