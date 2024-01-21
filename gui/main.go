@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -48,6 +49,20 @@ var (
 
 func main() {
 	defer ensureSingleAppInstance()()
+
+	loadConfig()
+	if cfg.LogFile != "" {
+		path := cfg.LogFile
+		if !filepath.IsAbs(cfg.LogFile) {
+			path = filepath.Join(getExeDir(), cfg.LogFile)
+		}
+		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+		if err != nil {
+			fatal(err)
+		}
+		defer f.Close()
+		log.SetOutput(f)
+	}
 
 	// Try to set main window icon.
 	// ID of GrpIcon assigned by rsrc tool: rsrc -manifest app.manifest -ico app.ico -o rsrc.syso

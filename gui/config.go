@@ -14,6 +14,7 @@ type config struct {
 	UserKey                 string
 	UpdateCheckTime         time.Time
 	UpdateCheckIntervalDays int
+	LogFile                 string
 }
 
 var (
@@ -27,12 +28,7 @@ var (
 
 // getConfigPath returns path to config file in the same directory as executable.
 func getConfigPath() string {
-	exePath, err := os.Executable()
-	if err != nil {
-		fatal(err)
-	}
-	dir := filepath.Dir(exePath)
-	return filepath.Join(dir, "eiproxy.json")
+	return filepath.Join(getExeDir(), "eiproxy.json")
 }
 
 func loadConfig() {

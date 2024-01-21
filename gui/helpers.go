@@ -3,6 +3,8 @@ package main
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"syscall"
 	"unsafe"
 
@@ -158,4 +160,12 @@ func onLinkActivated(link *walk.LinkLabelLink) {
 		syscall.StringToUTF16Ptr(link.URL()),
 		nil, nil, win.SW_SHOWNORMAL,
 	)
+}
+
+func getExeDir() string {
+	exePath, err := os.Executable()
+	if err != nil {
+		fatal(err)
+	}
+	return filepath.Dir(exePath)
 }
