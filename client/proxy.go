@@ -147,15 +147,18 @@ func sendToken(conn *net.UDPConn, token protocol.Token) error {
 	}
 }
 
-func (c *client) proxyMainLoopReader(ctx context.Context, conn *net.UDPConn) error {
+func (c *client) proxyMainLoopReader(ctx context.Context, conn *net.UDPConn) (err error) {
+	var wg sync.WaitGroup
+	defer wg.Wait()
+
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer func() { cancel(err) }()
+
 	defer func() {
 		c.mut.Lock()
 		defer c.mut.Unlock()
 		c.remoteAddrToDataCh = make(map[addrPortV4]chan []byte, dataChanSize)
 	}()
-
-	var wg sync.WaitGroup
-	defer wg.Wait()
 
 	c.getWorkerChan(ctx, &wg, c.masterAddr, true)
 
