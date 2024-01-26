@@ -101,7 +101,7 @@ func (c *client) Run(ctx context.Context) error {
 		}()
 	}
 
-	run(func() error { return runMasterProxy(ctx, c.cfg.MasterAddr) }, "Master proxy")
+	run(func() error { return runMasterTCPProxy(ctx, c.cfg.MasterAddr) }, "Master proxy")
 	run(func() error {
 		return c.runProxyClient(ctx, fmt.Sprintf("%s:%d", serverURL.Hostname(), port))
 	}, "Proxy main loop")

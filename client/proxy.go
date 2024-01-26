@@ -160,7 +160,16 @@ func (c *client) proxyMainLoopReader(ctx context.Context, conn *net.UDPConn) (er
 		c.remoteAddrToDataCh = make(map[addrPortV4]chan []byte, dataChanSize)
 	}()
 
-	c.getWorkerChan(ctx, &wg, c.masterAddr, true)
+	masterAddrPortV4 := addrPortV4{
+		ip:   ipv4(c.masterAddr.IP.To4()[:net.IPv4len]),
+		port: uint16(c.masterAddr.Port),
+	}
+	masterDataCh := make(chan []byte, dataChanSize)
+	c.remoteAddrToDataCh[masterAddrPortV4] = masterDataCh
+	go func() {
+		err := runMasterUDPProxy(ctx, c.masterAddr, masterDataCh, c.dataToServerCh)
+		log.Printf("Master UDP proxy failed: %v", err)
+	}()
 
 	lastSuccess := time.Now()
 	var buf [2048]byte
@@ -200,7 +209,7 @@ func (c *client) proxyMainLoopReader(ctx context.Context, conn *net.UDPConn) (er
 		}
 		if n > protocol.AddrSize {
 			addr, data := protocol.DecodeAddrData(buf[:n])
-			dataCh := c.getWorkerChan(ctx, &wg, addr, false)
+			dataCh := c.getWorkerChan(ctx, &wg, addr)
 			select {
 			case dataCh <- append([]byte(nil), data...):
 			default:
@@ -257,17 +266,11 @@ func (c *client) handleWorker(
 	remoteAddr *net.UDPAddr,
 	localIP net.IP,
 	dataCh <-chan []byte,
-	isMaster bool,
 ) error {
 	gameAddr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8888}
 
-	port := 0
-	if isMaster {
-		port = 28004
-	}
-
 	var lc net.ListenConfig
-	pc, err := lc.ListenPacket(ctx, "udp4", fmt.Sprintf("%s:%d", localIP, port))
+	pc, err := lc.ListenPacket(ctx, "udp4", fmt.Sprintf("%s:0", localIP))
 	if err != nil {
 		return fmt.Errorf("worker: failed to listen: %w", err)
 	}
@@ -280,8 +283,7 @@ func (c *client) handleWorker(
 
 	conn := pc.(*net.UDPConn)
 
-	log.Printf("Running worker: local addr: %v, remote addr: %v is master: %v",
-		conn.LocalAddr(), remoteAddr, isMaster)
+	log.Printf("Running worker: local addr: %v, remote addr: %v", conn.LocalAddr(), remoteAddr)
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -318,14 +320,12 @@ func (c *client) handleWorker(
 		defer conn.Close()
 		var buf [2048]byte
 		for {
-			if !isMaster {
-				err := conn.SetReadDeadline(time.Now().Add(30 * time.Second))
-				if err != nil {
-					if err = ignoreCancelledOrClosed(err); err != nil {
-						log.Printf("Worker: failed to set read deadline: %v", err)
-					}
-					return
+			err := conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+			if err != nil {
+				if err = ignoreCancelledOrClosed(err); err != nil {
+					log.Printf("Worker: failed to set read deadline: %v", err)
 				}
+				return
 			}
 
 			n, addr, err := conn.ReadFromUDP(buf[:])
@@ -334,21 +334,12 @@ func (c *client) handleWorker(
 					return
 				}
 				if errors.Is(err, os.ErrDeadlineExceeded) {
-					if !isMaster {
-						log.Printf("Worker: timed out, exiting. local addr: %v, remote addr: %v",
-							conn.LocalAddr(), remoteAddr)
-						return
-					}
-					continue
+					log.Printf("Worker: timed out, exiting. local addr: %v, remote addr: %v",
+						conn.LocalAddr(), remoteAddr)
+					return
 				}
 
 				log.Printf("Worker: failed to read: %v", err)
-				if isMaster {
-					// Not sure if we should continue here, but it's might be non-recoverable error.
-					// But let's keep it like this for now until we see a real error.
-					time.Sleep(100 * time.Millisecond) // prevent busy loop
-					continue
-				}
 				return
 			}
 
@@ -380,7 +371,6 @@ func (c *client) getWorkerChan(
 	ctx context.Context,
 	wg *sync.WaitGroup,
 	addr *net.UDPAddr,
-	isMaster bool,
 ) chan []byte {
 
 	ip := addr.IP.To4()
@@ -413,7 +403,7 @@ func (c *client) getWorkerChan(
 	go func(dataCh chan []byte) {
 		defer wg.Done()
 
-		err := c.handleWorker(ctx, addr, localIP.ToIP(), dataCh, isMaster)
+		err := c.handleWorker(ctx, addr, localIP.ToIP(), dataCh)
 		if err != nil {
 			log.Printf("Worker for %v failed: %v", addr4, err)
 		}
