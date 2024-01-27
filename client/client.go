@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	ClientVer   = "0.3.0"
+	ClientVer   = "0.3.1"
 	ProtocolVer = "1.0"
 )
 
