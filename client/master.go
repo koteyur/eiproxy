@@ -96,8 +96,6 @@ func runMasterUDPProxy(
 	dataToGameCh <-chan []byte,
 	dataToServerCh chan<- []byte,
 ) error {
-	gameAddr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8888}
-
 	var lc net.ListenConfig
 	pc, err := lc.ListenPacket(ctx, "udp4", proxyMasterAddr)
 	if err != nil {

@@ -16,6 +16,8 @@ import (
 
 const dataChanSize = 1000
 
+var gameAddr = &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8888}
+
 type ipv4 [net.IPv4len]byte
 
 func (ip ipv4) ToIP() net.IP {
@@ -281,10 +283,9 @@ func (c *client) handleWorker(
 	localIP net.IP,
 	dataCh <-chan []byte,
 ) error {
-	gameAddr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8888}
 
-	var lc net.ListenConfig
-	pc, err := lc.ListenPacket(ctx, "udp4", fmt.Sprintf("%s:0", localIP))
+	d := net.Dialer{LocalAddr: &net.UDPAddr{IP: localIP, Port: 0}}
+	pc, err := d.DialContext(ctx, "udp4", gameAddr.String())
 	if err != nil {
 		return fmt.Errorf("worker: failed to listen: %w", err)
 	}
@@ -318,7 +319,7 @@ func (c *client) handleWorker(
 				}
 			}
 
-			_, err = conn.WriteToUDP(data, gameAddr)
+			_, err = conn.Write(data)
 			if err != nil {
 				if isCancelledOrClosed(err) {
 					return
@@ -342,7 +343,7 @@ func (c *client) handleWorker(
 				return
 			}
 
-			n, addr, err := conn.ReadFromUDP(buf[:])
+			n, err := conn.Read(buf[:])
 			if err != nil {
 				if isCancelledOrClosed(err) {
 					return
@@ -355,11 +356,6 @@ func (c *client) handleWorker(
 
 				log.Printf("Worker: failed to read: %v", err)
 				return
-			}
-
-			if !addr.IP.Equal(addr.IP) || addr.Port != gameAddr.Port {
-				log.Printf("Worker: packet from unexpected addr: %v", addr)
-				continue
 			}
 
 			if n == 0 {
