@@ -44,7 +44,6 @@ func New(cfg Config) Client {
 		dataToServerCh:     make(chan []byte, dataChanSize),
 		remoteIPToLocalIP:  make(map[ipv4]ipv4),
 		remoteAddrToDataCh: make(map[addrPortV4]chan []byte, dataChanSize),
-		nextLocalIP:        ipv4{127, 0, 0, 1},
 		ready:              make(chan struct{}),
 	}
 }

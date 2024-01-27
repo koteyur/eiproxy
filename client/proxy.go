@@ -60,6 +60,26 @@ func (c *client) runProxyClient(ctx context.Context, addr string) error {
 	var wg sync.WaitGroup
 	defer wg.Wait() // wait after context is cancelled and dataToServerCh is closed
 
+	// Prepare a channel for master UDP proxy.
+	masterAddrPortV4 := addrPortV4{
+		ip:   ipv4(c.masterAddr.IP.To4()[:net.IPv4len]),
+		port: uint16(c.masterAddr.Port),
+	}
+	masterDataCh := make(chan []byte, dataChanSize)
+	masterDone := make(chan error)
+	c.remoteAddrToDataCh[masterAddrPortV4] = masterDataCh
+	c.nextLocalIP = ipv4{127, 0, 0, 2}
+
+	// We don't use run() approach as below, because we don't want to cancel childCtx.
+	go func() {
+		err := runMasterUDPProxy(ctx, c.masterAddr, masterDataCh, c.dataToServerCh)
+		log.Printf("Master UDP proxy failed: %v", err)
+		masterDone <- err
+	}()
+
+	// Prepare a context for proxy reader/writer.
+	// If it's cancelled, it means that something went wrong with the connection.
+	// In such case we don't try to make a graceful shutdown.
 	childCtx, cancel := context.WithCancelCause(context.Background())
 	defer cancel(nil)
 
@@ -89,6 +109,7 @@ func (c *client) runProxyClient(ctx context.Context, addr string) error {
 	run(c.proxyMainLoopReader, "Main loop reader")
 	run(c.proxyMainLoopWriter, "Main loop writer")
 
+	var resultErr error
 	select {
 	case <-ctx.Done():
 		// Graceful shutdown.
@@ -98,6 +119,10 @@ func (c *client) runProxyClient(ctx context.Context, addr string) error {
 		err := context.Cause(childCtx)
 		log.Printf("Client failed: %v", err)
 		return err
+
+	case err := <-masterDone:
+		// Master proxy failed. Remember the error and continue gracefull shutdown.
+		resultErr = err
 	}
 
 	log.Printf("Context done, disconnecting")
@@ -108,7 +133,7 @@ func (c *client) runProxyClient(ctx context.Context, addr string) error {
 		case <-childCtx.Done():
 			// Assume that server has disconnected.
 			log.Printf("Disconnected from proxy server")
-			return nil
+			return resultErr
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
@@ -158,17 +183,6 @@ func (c *client) proxyMainLoopReader(ctx context.Context, conn *net.UDPConn) (er
 		c.mut.Lock()
 		defer c.mut.Unlock()
 		c.remoteAddrToDataCh = make(map[addrPortV4]chan []byte, dataChanSize)
-	}()
-
-	masterAddrPortV4 := addrPortV4{
-		ip:   ipv4(c.masterAddr.IP.To4()[:net.IPv4len]),
-		port: uint16(c.masterAddr.Port),
-	}
-	masterDataCh := make(chan []byte, dataChanSize)
-	c.remoteAddrToDataCh[masterAddrPortV4] = masterDataCh
-	go func() {
-		err := runMasterUDPProxy(ctx, c.masterAddr, masterDataCh, c.dataToServerCh)
-		log.Printf("Master UDP proxy failed: %v", err)
 	}()
 
 	lastSuccess := time.Now()
