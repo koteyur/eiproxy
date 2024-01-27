@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"eiproxy/protocol"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -49,6 +50,47 @@ func New(cfg Config) Client {
 }
 
 func (c *client) Run(ctx context.Context) error {
+	// TODO: Handle better some specific cases where we shouldn't retry at all.
+	lastSuccRun := time.Time{}
+	attempt := 0
+	for {
+		ready := c.ready
+		lastRun := time.Now()
+		err := c.RunWithoutRetries(ctx)
+		if err == nil || errors.Is(err, context.Canceled) {
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return err
+		case <-ready:
+			// Connection was successful last time.
+			if time.Since(lastRun) > 10*time.Second {
+				log.Println("Last run was successful, let's try to recover")
+				lastSuccRun = time.Now()
+				attempt = 0
+			}
+		default:
+		}
+
+		if lastSuccRun.IsZero() {
+			return err
+		}
+
+		attempt++
+		if attempt > 5 {
+			return err
+		}
+
+		// Wait before next run.
+		delay := time.Duration(1<<attempt) * time.Second
+		log.Printf("Attempt %d failed, waiting %v before next run", attempt, delay)
+		time.Sleep(delay)
+	}
+}
+
+func (c *client) RunWithoutRetries(ctx context.Context) error {
 	serverURL, err := url.Parse(c.cfg.ServerURL)
 	if err != nil {
 		return fmt.Errorf("failed to parse server url: %w", err)
@@ -76,6 +118,7 @@ func (c *client) Run(ctx context.Context) error {
 	log.Printf("Connection established. Port: %d", port)
 	c.token = token
 	c.port = port
+	defer func() { c.ready = make(chan struct{}) }()
 	close(c.ready)
 
 	var wg sync.WaitGroup
