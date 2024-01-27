@@ -305,7 +305,7 @@ func start() {
 			stopBt.SetEnabled(false)
 			startBt.SetEnabled(true)
 			proxyIPEdit.SetEnabled(false)
-			proxyIPEdit.SetText("")
+			proxyIPEdit.SetText("unassigned")
 			proxyStatus.SetText("stopped")
 			stopBt.Clicked().Detach(handle)
 		}
