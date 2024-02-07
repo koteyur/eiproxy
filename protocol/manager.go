@@ -2,6 +2,8 @@ package protocol
 
 import "time"
 
+const Version = "1.0"
+
 type ConnectionResponse struct {
 	Token        *Token          `json:"token,omitempty"`
 	Port         *int            `json:"port,omitempty"`
@@ -16,6 +18,7 @@ const (
 	ConnectionCodeAlreadyConnected
 	ConnectionCodeServerFull
 	ConnectionCodeInternalError
+	ConnectionCodeVersionMismatch
 )
 
 func (c ConnectionCode) String() string {
@@ -28,6 +31,8 @@ func (c ConnectionCode) String() string {
 		return "server full"
 	case ConnectionCodeInternalError:
 		return "internal error"
+	case ConnectionCodeVersionMismatch:
+		return "version mismatch"
 	default:
 		return "unknown"
 	}

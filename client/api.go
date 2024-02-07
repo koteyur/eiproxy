@@ -18,7 +18,7 @@ func (c *client) connect(ctx context.Context) (port int, token protocol.Token, e
 	u = u.JoinPath("api/connect")
 
 	q := u.Query()
-	q.Add("proto", ProtocolVer)
+	q.Add("proto", protocol.Version)
 	q.Add("client", ClientVer)
 	u.RawQuery = q.Encode()
 

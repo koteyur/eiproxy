@@ -13,10 +13,7 @@ import (
 	"time"
 )
 
-const (
-	ClientVer   = "0.3.1"
-	ProtocolVer = "1.0"
-)
+const ClientVer = "0.3.1"
 
 type client struct {
 	mut   sync.Mutex
