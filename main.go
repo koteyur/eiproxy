@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -30,7 +31,7 @@ func main() {
 
 	var err error
 	if *mode == "client" {
-		var cfg client.Config
+		cfg := client.DefaultConfig
 		readConfig(*configPath, &cfg)
 		err = client.New(cfg).Run(ctx)
 	} else if *mode == "server" {
@@ -40,10 +41,11 @@ func main() {
 	}
 
 	if err != nil && !errors.Is(err, context.Canceled) {
-		log.Println("Error:")
+		message := "Error:\n"
 		for _, e := range strings.Split(err.Error(), "\n") {
-			log.Printf(" - %s", e)
+			message += fmt.Sprintf(" - %s", e)
 		}
+		log.Println(message)
 		os.Exit(1)
 	}
 }

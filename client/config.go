@@ -7,3 +7,8 @@ type Config struct {
 	ServerURL  string
 	UserKey    protocol.UserKey
 }
+
+var DefaultConfig = Config{
+	MasterAddr: "vps.gipat.ru:28004",
+	ServerURL:  "http://localhost:8080",
+}
